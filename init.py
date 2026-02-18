@@ -49,6 +49,10 @@ def initialize_database():
     # Execute schema
     schema_path = Path(__file__).parent / "database" / "schema.sql"
     if schema_path.exists():
+        if getattr(db, "conn", None) is None:
+            logger.error("Database connection is not established; cannot execute schema")
+            db.close()
+            return False
         db.execute_schema(str(schema_path))
         logger.info("Database schema initialized successfully")
     else:
