@@ -5,7 +5,6 @@ Schedules periodic data updates.
 
 import os
 import logging
-from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
@@ -119,27 +118,41 @@ class DataScheduler:
         except Exception as e:
             logger.error(f"Failed to update data for {ticker}: {e}")
     
+
+    def run_ingestion_cycle(self):
+        """
+        The Master Job:
+        1. Asks DB: "What should I track right now?"
+        2. Loops through that list.
+        3. Updates data.
+        """
+        logger.info("Starting ingestion cycle...")
+        
+        # dynamic_tickers will contain ONLY the rows where is_active = true
+        dynamic_tickers = self.db.get_active_tickers()
+        
+        if not dynamic_tickers:
+            logger.warning("No active tickers found in database.")
+            return
+
+        for ticker in dynamic_tickers:
+            self.update_data(ticker) # Your existing update logic
+            
     def start(self):
         """Start the scheduler."""
-        # Add jobs for each ticker
+        # Schedule the master ingestion job
         update_interval = int(os.getenv('UPDATE_INTERVAL_MINUTES', 5))
         
-        for ticker in self.tickers:
-            # Initial update
-            self.update_data(ticker)
-            
-            # Schedule periodic updates
-            self.scheduler.add_job(
-                func=self.update_data,
-                trigger=IntervalTrigger(minutes=update_interval),
-                args=[ticker],
-                id=f'update_{ticker}',
-                name=f'Update {ticker}',
-                replace_existing=True
-            )
+        self.scheduler.add_job(
+            func=self.run_ingestion_cycle,
+            trigger=IntervalTrigger(minutes=update_interval),
+            id='master_ingestion_job',
+            name='Master Ingestion Cycle',
+            replace_existing=True
+        )
         
         self.scheduler.start()
-        logger.info(f"Scheduler started with {len(self.tickers)} ticker(s)")
+        logger.info(f"Scheduler started. Running every {update_interval} minutes.")
     
     def stop(self):
         """Stop the scheduler."""

@@ -238,3 +238,41 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to get analysis: {e}")
             return []
+
+    def get_active_tickers(self) -> List[str]:
+        """Fetch all tickers marked as active."""
+        query = "SELECT symbol FROM tickers WHERE is_active = true"
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute(query)
+                # Return a simple list like ['AAPL', '1542.T']
+                return [row[0] for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Failed to fetch active tickers: {e}")
+            return []
+
+    def add_ticker(self, symbol: str):
+        """Add a new ticker or reactivate an existing one."""
+        query = """
+        INSERT INTO tickers (symbol, is_active) 
+        VALUES (%s, true)
+        ON CONFLICT (symbol) DO UPDATE SET is_active = true
+        """
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute(query, (symbol,))
+                self.conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to add ticker {symbol}: {e}")
+            self.conn.rollback()
+
+    def deactivate_ticker(self, symbol: str):
+        """Stop tracking a ticker (Soft Delete). Data remains."""
+        query = "UPDATE tickers SET is_active = false WHERE symbol = %s"
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute(query, (symbol,))
+                self.conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to deactivate ticker {symbol}: {e}")
+            self.conn.rollback()

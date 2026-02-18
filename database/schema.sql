@@ -49,6 +49,13 @@ CREATE TABLE IF NOT EXISTS analysis_info (
     UNIQUE(ticker, date)
 );
 
+CREATE TABLE IF NOT EXISTS tickers (
+    id SERIAL PRIMARY KEY,
+    symbol VARCHAR(10) UNIQUE NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_price_realtime_ticker ON price_realtime(ticker);
 CREATE INDEX IF NOT EXISTS idx_price_realtime_timestamp ON price_realtime(timestamp);
@@ -56,3 +63,4 @@ CREATE INDEX IF NOT EXISTS idx_price_daily_ticker ON price_daily(ticker);
 CREATE INDEX IF NOT EXISTS idx_price_daily_date ON price_daily(date);
 CREATE INDEX IF NOT EXISTS idx_analysis_info_ticker ON analysis_info(ticker);
 CREATE INDEX IF NOT EXISTS idx_analysis_info_date ON analysis_info(date);
+CREATE INDEX IF NOT EXISTS idx_tickers_active ON tickers(is_active);
