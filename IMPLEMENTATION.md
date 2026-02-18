@@ -43,12 +43,12 @@ Professional market analysis application built with Python, Streamlit, and Postg
 
 ### 5. Infrastructure (TrueNAS Ready)
 - **Dockerfile**: 
-  - Python 3.11 slim base
+  - Python 3.13 slim base
   - Non-root user for security
   - Health checks with curl
   - Optimized layer caching
 - **docker-compose.yml**:
-  - PostgreSQL service with data persistence
+  - PostgreSQL 18 service with data persistence
   - Scheduler service for data ingestion
   - Dashboard service (port 8501)
   - Network isolation
@@ -65,14 +65,15 @@ Professional market analysis application built with Python, Streamlit, and Postg
 ## 🔧 Technical Specifications
 
 ### Technology Stack
-- **Language**: Python 3.11
-- **Database**: PostgreSQL 15
-- **UI Framework**: Streamlit 1.31.0
-- **Data Source**: yfinance 0.2.35
-- **Scheduler**: APScheduler 3.10.4
+- **Language**: Python 3.13
+- **Database**: PostgreSQL 18
+- **UI Framework**: Streamlit 1.40.0+
+- **Data Source**: yfinance 0.2.50+
+- **Scheduler**: APScheduler 3.10.4+
 - **Analysis**: pandas, numpy, ta (technical analysis)
-- **Visualization**: Plotly 5.18.0
-- **ML Framework**: scikit-learn 1.4.0 (ready for models)
+- **Visualization**: Plotly 5.24.0+
+- **ML Framework**: scikit-learn 1.5.2+ (ready for models)
+- **DB Driver**: psycopg 3.2.0+ (PostgreSQL 18 optimized)
 
 ### Architecture Pattern
 - **Modular Design**: Separated concerns (database, ingestion, models, dashboard)

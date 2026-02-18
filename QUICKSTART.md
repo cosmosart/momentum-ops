@@ -1,5 +1,19 @@
 # Quick Start Guide - Momentum Ops
 
+## � Prerequisites
+
+- **Docker & Docker Compose** (recommended - handles all dependencies)
+- **OR for local development:**
+  - Python 3.13+
+  - PostgreSQL 18+
+
+**Technology Stack:**
+- Backend: Python 3.13 with psycopg3 driver
+- Database: PostgreSQL 18
+- Dashboard: Streamlit 1.40.0+
+
+---
+
 ## 🚀 Fastest Way to Get Started
 
 ### Using Docker (Recommended)
@@ -100,10 +114,11 @@
 ┌─────────────────────────────────────────┐
 │         Streamlit Dashboard             │  Port 8501
 │  (Momentum + Predictions Tabs)          │
+│         [Python 3.13]                   │
 └────────────────┬────────────────────────┘
-                 │
+                 │ psycopg3
 ┌────────────────▼────────────────────────┐
-│          PostgreSQL Database            │  Port 5432
+│       PostgreSQL 18 Database            │  Port 5432
 │  (price_realtime, price_daily,          │
 │   analysis_info tables)                 │
 └────────────────▲────────────────────────┘
@@ -185,8 +200,10 @@ See main [README.md](README.md) for full local development setup.
 1. **Upload Files**: Copy entire project to TrueNAS
 2. **Configure**: Edit `.env` with production settings
 3. **Deploy**: Run `docker-compose up -d`
-4. **Persist Data**: Volumes are auto-configured
+4. **Persist Data**: Volumes are auto-configured (PostgreSQL 18)
 5. **Access**: Use TrueNAS IP:8501
+
+**Note**: Docker Compose automatically pulls PostgreSQL 18 and Python 3.13 images.
 
 ---
 
@@ -206,6 +223,9 @@ See main [README.md](README.md) for full local development setup.
 3. **API Limits**: Yahoo Finance has rate limits
 4. **Data Delay**: Market data may have 15-minute delay
 5. **Production ML**: Implement proper models in `models/models.py`
+6. **PostgreSQL 18**: Uses latest PostgreSQL features and performance optimizations
+7. **Python 3.13**: Optimized with psycopg3 driver for best database performance
+8. **Compatibility**: If using external PostgreSQL, ensure version 18+ for full compatibility
 
 ---
 

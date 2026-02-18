@@ -1,26 +1,26 @@
-# Core dependencies
-streamlit==1.31.0
-pandas==2.2.0
-numpy==1.26.3
+# Core dependencies (Python 3.13 optimized)
+streamlit>=1.40.0
+pandas>=2.2.3
+numpy>=1.26.4
 
-# Database
-psycopg2-binary==2.9.9
-sqlalchemy==2.0.25
+# Database (PostgreSQL 18 compatible)
+psycopg[binary]>=3.2.0
+sqlalchemy>=2.0.36
 
 # Data fetching
-yfinance==0.2.35
+yfinance>=0.2.50
 
 # Scheduling
-APScheduler==3.10.4
+APScheduler>=3.10.4
 
 # Technical analysis
-ta==0.11.0
+ta>=0.11.0
 
 # Machine learning
-scikit-learn==1.4.0
+scikit-learn>=1.5.2
 
 # Plotting
-plotly==5.18.0
+plotly>=5.24.0
 
 # Environment variables
-python-dotenv==1.0.0
+python-dotenv>=1.0.1

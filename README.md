@@ -51,7 +51,7 @@ momentum-ops/
 ### Prerequisites
 
 - Docker and Docker Compose (recommended)
-- OR Python 3.11+ and PostgreSQL 15+
+- OR Python 3.13+ and PostgreSQL 18+
 
 ### Option 1: Docker Deployment (Recommended)
 
@@ -192,8 +192,8 @@ docker-compose up -d
 
 ## Technical Stack
 
-- **Backend**: Python 3.11
-- **Database**: PostgreSQL 15
+- **Backend**: Python 3.13
+- **Database**: PostgreSQL 18
 - **Data Source**: yfinance
 - **Scheduling**: APScheduler
 - **UI**: Streamlit
@@ -204,14 +204,16 @@ docker-compose up -d
 ## Dependencies
 
 See `requirements.txt` for full list. Key packages:
-- streamlit
-- pandas, numpy
-- psycopg2-binary, sqlalchemy
-- yfinance
-- APScheduler
-- ta (technical analysis)
-- plotly
-- scikit-learn
+- streamlit (1.40.0+)
+- pandas (2.2.3+), numpy (1.26.4+)
+- psycopg[binary] (3.2.0+), sqlalchemy (2.0.36+)
+- yfinance (0.2.50+)
+- APScheduler (3.10.4+)
+- ta (0.11.0+)
+- plotly (5.24.0+)
+- scikit-learn (1.5.2+)
+
+**Note**: This project uses psycopg3 for optimal PostgreSQL 18 compatibility and Python 3.13 performance.
 
 ## Monitoring
 

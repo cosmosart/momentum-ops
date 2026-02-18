@@ -1,5 +1,4 @@
-"""
-Database module for momentum-ops application.
+""" Database module for momentum-ops application.
 Handles database connections and operations.
 """
 
@@ -7,8 +6,8 @@ import os
 import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import psycopg
+from psycopg.rows import dict_row
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -38,10 +37,10 @@ class Database:
             bool: True if connection successful, False otherwise
         """
         try:
-            self.conn = psycopg2.connect(
+            self.conn = psycopg.connect(
                 host=self.host,
                 port=self.port,
-                database=self.database,
+                dbname=self.database,
                 user=self.user,
                 password=self.password
             )
@@ -208,7 +207,7 @@ class Database:
         LIMIT %s
         """
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            with self.conn.cursor(row_factory=dict_row) as cursor:
                 cursor.execute(query, (ticker, limit))
                 return cursor.fetchall()
         except Exception as e:
@@ -233,7 +232,7 @@ class Database:
         LIMIT %s
         """
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            with self.conn.cursor(row_factory=dict_row) as cursor:
                 cursor.execute(query, (ticker, limit))
                 return cursor.fetchall()
         except Exception as e:
