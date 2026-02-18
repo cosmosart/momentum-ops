@@ -1,23 +1,24 @@
--- Create database schema for momentum-ops
+-- DANGER: Run this first to clear old schema
+DROP TABLE IF EXISTS analysis_info CASCADE;
+DROP TABLE IF EXISTS price_daily CASCADE;
+DROP TABLE IF EXISTS price_realtime CASCADE;
 
--- Table: price_realtime
--- Stores real-time price data for stocks
-CREATE TABLE IF NOT EXISTS price_realtime (
+-- 1. Real-time Price (Timezone Critical)
+CREATE TABLE price_realtime (
     id SERIAL PRIMARY KEY,
     ticker VARCHAR(10) NOT NULL,
-    timestamp TIMESTAMP NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL, -- CHANGED to TIMESTAMPTZ
     open DECIMAL(10, 2),
     high DECIMAL(10, 2),
     low DECIMAL(10, 2),
     close DECIMAL(10, 2),
     volume BIGINT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, -- CHANGED
     UNIQUE(ticker, timestamp)
 );
 
--- Table: price_daily
--- Stores daily aggregated price data
-CREATE TABLE IF NOT EXISTS price_daily (
+-- 2. Daily Price (Date is standard)
+CREATE TABLE price_daily (
     id SERIAL PRIMARY KEY,
     ticker VARCHAR(10) NOT NULL,
     date DATE NOT NULL,
@@ -27,32 +28,40 @@ CREATE TABLE IF NOT EXISTS price_daily (
     close DECIMAL(10, 2),
     adj_close DECIMAL(10, 2),
     volume BIGINT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, -- CHANGED
     UNIQUE(ticker, date)
 );
 
--- Table: analysis_info
--- Stores technical analysis indicators and predictions
-CREATE TABLE IF NOT EXISTS analysis_info (
+-- 3. Analysis & Fundamentals (Includes your missing columns)
+CREATE TABLE analysis_info (
     id SERIAL PRIMARY KEY,
     ticker VARCHAR(10) NOT NULL,
     date DATE NOT NULL,
+    -- Technicals
     rsi DECIMAL(10, 4),
     macd DECIMAL(10, 4),
     macd_signal DECIMAL(10, 4),
     macd_hist DECIMAL(10, 4),
+    -- Fundamentals
+    analyst_rating SMALLINT, -- 0-4 scale
+    dividend_yield DECIMAL(5, 2),
+    market_cap BIGINT,
+    avg_volume BIGINT,
+    eps DECIMAL(10, 2),
+    pe_ratio DECIMAL(10, 2),
+    -- Predictions
     prediction_1d DECIMAL(10, 2),
     prediction_1w DECIMAL(10, 2),
     prediction_1m DECIMAL(10, 2),
     prediction_1y DECIMAL(10, 2),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, -- CHANGED
     UNIQUE(ticker, date)
 );
 
--- Create indexes for better query performance
-CREATE INDEX IF NOT EXISTS idx_price_realtime_ticker ON price_realtime(ticker);
-CREATE INDEX IF NOT EXISTS idx_price_realtime_timestamp ON price_realtime(timestamp);
-CREATE INDEX IF NOT EXISTS idx_price_daily_ticker ON price_daily(ticker);
-CREATE INDEX IF NOT EXISTS idx_price_daily_date ON price_daily(date);
-CREATE INDEX IF NOT EXISTS idx_analysis_info_ticker ON analysis_info(ticker);
-CREATE INDEX IF NOT EXISTS idx_analysis_info_date ON analysis_info(date);
+-- Re-create indexes
+CREATE INDEX idx_price_realtime_ticker ON price_realtime(ticker);
+CREATE INDEX idx_price_realtime_timestamp ON price_realtime(timestamp);
+CREATE INDEX idx_price_daily_ticker ON price_daily(ticker);
+CREATE INDEX idx_price_daily_date ON price_daily(date);
+CREATE INDEX idx_analysis_info_ticker ON analysis_info(ticker);
+CREATE INDEX idx_analysis_info_date ON analysis_info(date);

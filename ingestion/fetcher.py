@@ -4,7 +4,7 @@ Fetches market data for stocks.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 import yfinance as yf
 import pandas as pd
@@ -41,9 +41,22 @@ class DataFetcher:
                 return None
             
             latest = data.iloc[-1]
+            
+            # CRITICAL FIX FOR TIMESTAMPTZ:
+            # yfinance returns a timezone-aware index (e.g., America/New_York).
+            # We convert it to UTC immediately to be safe for Postgres.
+            timestamp = data.index[-1].to_pydatetime()
+            
+            if timestamp.tzinfo is None:
+                # If yfinance somehow returns a naive timestamp, force it to UTC
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            else:
+                # Convert whatever timezone yfinance gave us (e.g. EST) to UTC
+                timestamp = timestamp.astimezone(timezone.utc)
+
             return {
                 'ticker': self.ticker,
-                'timestamp': data.index[-1].to_pydatetime(),
+                'timestamp': timestamp,  # <--- Now safely UTC
                 'open': float(latest['Open']),
                 'high': float(latest['High']),
                 'low': float(latest['Low']),
@@ -51,7 +64,7 @@ class DataFetcher:
                 'volume': int(latest['Volume'])
             }
         except Exception as e:
-            logger.error(f"Failed to fetch realtime data for {self.ticker}: {e}")
+            logger.error(f"Failed to fetch realtime data: {e}")
             return None
     
     def fetch_daily_data(self, period: str = "1y") -> Optional[pd.DataFrame]:

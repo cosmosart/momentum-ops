@@ -68,7 +68,7 @@ class DataScheduler:
                 logger.info(f"Inserted realtime data for {ticker}")
             
             # Fetch and store daily data
-            daily_data = fetcher.fetch_daily_data(period="1y")
+            daily_data = fetcher.fetch_daily_data(period="5d")
             if daily_data is not None and not daily_data.empty:
                 for _, row in daily_data.iterrows():
                     self.db.insert_daily_price(
