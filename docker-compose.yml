@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: momentum-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-momentum_db}
+      POSTGRES_USER: ${DB_USER:-momentum_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-momentum_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - momentum-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-momentum_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  scheduler:
+    build: .
+    container_name: momentum-scheduler
+    command: python -c "from ingestion.scheduler import DataScheduler; import time; scheduler = DataScheduler(); scheduler.start(); print('Scheduler started'); time.sleep(999999)"
+    environment:
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-momentum_db}
+      DB_USER: ${DB_USER:-momentum_user}
+      DB_PASSWORD: ${DB_PASSWORD:-momentum_password}
+      DEFAULT_TICKER: ${DEFAULT_TICKER:-AAPL}
+      UPDATE_INTERVAL_MINUTES: ${UPDATE_INTERVAL_MINUTES:-5}
+      SCHEDULER_TIMEZONE: ${SCHEDULER_TIMEZONE:-UTC}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - momentum-network
+    restart: unless-stopped
+
+  dashboard:
+    build: .
+    container_name: momentum-dashboard
+    ports:
+      - "8501:8501"
+    environment:
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-momentum_db}
+      DB_USER: ${DB_USER:-momentum_user}
+      DB_PASSWORD: ${DB_PASSWORD:-momentum_password}
+      DEFAULT_TICKER: ${DEFAULT_TICKER:-AAPL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      scheduler:
+        condition: service_started
+    networks:
+      - momentum-network
+    restart: unless-stopped
+
+networks:
+  momentum-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
