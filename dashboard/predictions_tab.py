@@ -64,7 +64,7 @@ def render_predictions_tab(ticker: str):
             
             with col1:
                 pred_1d = analysis.get('prediction_1d')
-                if pred_1d and current_price != 0:
+                if pred_1d is not None and current_price != 0:
                     change_1d = pred_1d - current_price
                     change_pct_1d = (change_1d / current_price) * 100
                     st.metric(
@@ -72,14 +72,14 @@ def render_predictions_tab(ticker: str):
                         f"${pred_1d:.2f}",
                         f"{change_pct_1d:.2f}%"
                     )
-                elif pred_1d:
+                elif pred_1d is not None:
                     st.metric("1 Day", f"${pred_1d:.2f}")
                 else:
                     st.metric("1 Day", "N/A")
             
             with col2:
                 pred_1w = analysis.get('prediction_1w')
-                if pred_1w and current_price != 0:
+                if pred_1w is not None and current_price != 0:
                     change_1w = pred_1w - current_price
                     change_pct_1w = (change_1w / current_price) * 100
                     st.metric(
@@ -87,14 +87,14 @@ def render_predictions_tab(ticker: str):
                         f"${pred_1w:.2f}",
                         f"{change_pct_1w:.2f}%"
                     )
-                elif pred_1w:
+                elif pred_1w is not None:
                     st.metric("1 Week", f"${pred_1w:.2f}")
                 else:
                     st.metric("1 Week", "N/A")
             
             with col3:
                 pred_1m = analysis.get('prediction_1m')
-                if pred_1m and current_price != 0:
+                if pred_1m is not None and current_price != 0:
                     change_1m = pred_1m - current_price
                     change_pct_1m = (change_1m / current_price) * 100
                     st.metric(
@@ -102,14 +102,14 @@ def render_predictions_tab(ticker: str):
                         f"${pred_1m:.2f}",
                         f"{change_pct_1m:.2f}%"
                     )
-                elif pred_1m:
+                elif pred_1m is not None:
                     st.metric("1 Month", f"${pred_1m:.2f}")
                 else:
                     st.metric("1 Month", "N/A")
             
             with col4:
                 pred_1y = analysis.get('prediction_1y')
-                if pred_1y and current_price != 0:
+                if pred_1y is not None and current_price != 0:
                     change_1y = pred_1y - current_price
                     change_pct_1y = (change_1y / current_price) * 100
                     st.metric(
@@ -117,7 +117,7 @@ def render_predictions_tab(ticker: str):
                         f"${pred_1y:.2f}",
                         f"{change_pct_1y:.2f}%"
                     )
-                elif pred_1y:
+                elif pred_1y is not None:
                     st.metric("1 Year", f"${pred_1y:.2f}")
                 else:
                     st.metric("1 Year", "N/A")
@@ -132,13 +132,13 @@ def render_predictions_tab(ticker: str):
             
             # Create forecast points
             forecast_data = []
-            if pred_1d:
+            if pred_1d is not None:
                 forecast_data.append({'days': 1, 'price': pred_1d, 'label': '1 Day'})
-            if pred_1w:
+            if pred_1w is not None:
                 forecast_data.append({'days': 7, 'price': pred_1w, 'label': '1 Week'})
-            if pred_1m:
+            if pred_1m is not None:
                 forecast_data.append({'days': 30, 'price': pred_1m, 'label': '1 Month'})
-            if pred_1y:
+            if pred_1y is not None:
                 forecast_data.append({'days': 365, 'price': pred_1y, 'label': '1 Year'})
             
             # Create figure

@@ -72,6 +72,12 @@ def generate_predictions(df: pd.DataFrame) -> Dict[str, Optional[float]]:
         
         # Get recent closing prices
         recent_prices = df['Close'].tail(30).values
+        
+        # Need at least 2 prices to calculate trend
+        if len(recent_prices) < 2:
+            logger.warning("Insufficient data for predictions (need at least 2 prices)")
+            return {'1d': None, '1w': None, '1m': None, '1y': None}
+        
         current_price = recent_prices[-1]
         
         # PLACEHOLDER: Simple trend-based predictions
@@ -80,6 +86,11 @@ def generate_predictions(df: pd.DataFrame) -> Dict[str, Optional[float]]:
         # Calculate trend using recent price changes
         price_changes = np.diff(recent_prices)
         avg_change = np.mean(price_changes)
+        
+        # Check for NaN (shouldn't happen with valid data, but be defensive)
+        if np.isnan(avg_change):
+            logger.warning("Average price change is NaN, returning None predictions")
+            return {'1d': None, '1w': None, '1m': None, '1y': None}
         
         # Simple linear extrapolation (PLACEHOLDER)
         predictions = {

@@ -44,6 +44,15 @@ def render_momentum_tab(ticker: str):
         df = pd.DataFrame(daily_prices)
         df = df.sort_values('date')
         
+        # Normalize column names for indicator calculation (expects 'Close' capitalized)
+        df = df.rename(columns={
+            'open': 'Open',
+            'high': 'High',
+            'low': 'Low',
+            'close': 'Close',
+            'volume': 'Volume'
+        })
+        
         # Calculate indicators
         indicators = calculate_indicators(df)
         df = pd.concat([df, indicators], axis=1)
@@ -52,7 +61,7 @@ def render_momentum_tab(ticker: str):
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            current_price = df.iloc[-1]['close']
+            current_price = df.iloc[-1]['Close']
             st.metric("Current Price", f"${current_price:.2f}")
         
         with col2:
@@ -71,8 +80,8 @@ def render_momentum_tab(ticker: str):
         
         with col4:
             if len(df) >= 2:
-                prev_close = df.iloc[-2]['close']
-                price_change = df.iloc[-1]['close'] - prev_close
+                prev_close = df.iloc[-2]['Close']
+                price_change = df.iloc[-1]['Close'] - prev_close
                 if prev_close != 0:
                     price_change_pct = (price_change / prev_close) * 100
                     st.metric("Daily Change", f"{price_change_pct:.2f}%", f"${price_change:.2f}")
@@ -96,10 +105,10 @@ def render_momentum_tab(ticker: str):
         fig.add_trace(
             go.Candlestick(
                 x=df['date'],
-                open=df['open'],
-                high=df['high'],
-                low=df['low'],
-                close=df['close'],
+                open=df['Open'],
+                high=df['High'],
+                low=df['Low'],
+                close=df['Close'],
                 name='Price'
             ),
             row=1, col=1

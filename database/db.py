@@ -107,7 +107,8 @@ class Database:
                 self.conn.commit()
         except Exception as e:
             logger.error(f"Failed to insert realtime price: {e}")
-            self.conn.rollback()
+            if self.conn and not self.conn.closed:
+                self.conn.rollback()
     
     def insert_daily_price(self, ticker: str, date_val: date, 
                           open_price: float, high: float, low: float, 
@@ -142,7 +143,8 @@ class Database:
                 self.conn.commit()
         except Exception as e:
             logger.error(f"Failed to insert daily price: {e}")
-            self.conn.rollback()
+            if self.conn and not self.conn.closed:
+                self.conn.rollback()
     
     def insert_analysis(self, ticker: str, date_val: date, rsi: Optional[float] = None,
                        macd: Optional[float] = None, macd_signal: Optional[float] = None,
@@ -185,7 +187,8 @@ class Database:
                 self.conn.commit()
         except Exception as e:
             logger.error(f"Failed to insert analysis: {e}")
-            self.conn.rollback()
+            if self.conn and not self.conn.closed:
+                self.conn.rollback()
     
     def get_daily_prices(self, ticker: str, limit: int = 100) -> List[Dict[str, Any]]:
         """
