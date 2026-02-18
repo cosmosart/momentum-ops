@@ -48,7 +48,9 @@ class DataScheduler:
         try:
             # Connect to database
             if not self.db.conn or (hasattr(self.db.conn, 'closed') and self.db.conn.closed):
-                self.db.connect()
+                if not self.db.connect():
+                    logger.error("Database connection failed; aborting update for %s", ticker)
+                    return
             
             # Fetch data
             fetcher = DataFetcher(ticker)

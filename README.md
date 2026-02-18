@@ -112,7 +112,7 @@ cp .env.example .env
 
 4. Run data scheduler (in one terminal):
 ```bash
-python -c "from ingestion.scheduler import DataScheduler; import time; scheduler = DataScheduler(); scheduler.start(); time.sleep(999999)"
+python run_scheduler.py
 ```
 
 5. Run dashboard (in another terminal):
