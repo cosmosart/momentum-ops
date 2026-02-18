@@ -54,12 +54,35 @@ def main():
     with st.sidebar:
         st.header("Configuration")
         
-        # Ticker selection
-        ticker = st.text_input(
-            "Stock Ticker",
-            value=os.getenv('DEFAULT_TICKER', 'AAPL'),
-            help="Enter a stock ticker symbol (e.g., AAPL, GOOGL, MSFT)"
-        ).upper()
+        # Ticker selection - Get tickers from database
+        db = Database()
+        ticker_list = []
+        default_ticker = os.getenv('DEFAULT_TICKER', 'AAPL')
+        
+        if db.connect():
+            ticker_list = db.get_all_tickers()
+            db.close()
+        
+        # If ticker list is available, use selectbox with search
+        if ticker_list:
+            # Set default index
+            default_index = 0
+            if default_ticker in ticker_list:
+                default_index = ticker_list.index(default_ticker)
+            
+            ticker = st.selectbox(
+                "Stock Ticker Selection",
+                options=ticker_list,
+                index=default_index,
+                help="Search and select a stock ticker symbol"
+            )
+        else:
+            # Fallback to text input if no tickers in database
+            ticker = st.text_input(
+                "Stock Ticker",
+                value=default_ticker,
+                help="Enter a stock ticker symbol (e.g., AAPL, GOOGL, MSFT)"
+            ).upper()
         
         st.divider()
         

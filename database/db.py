@@ -241,7 +241,7 @@ class Database:
 
     def get_active_tickers(self) -> List[str]:
         """Fetch all tickers marked as active."""
-        query = "SELECT symbol FROM tickers WHERE is_active = true"
+        query = "SELECT symbol FROM tickers WHERE is_active = true ORDER BY symbol"
         try:
             with self.conn.cursor() as cursor:
                 cursor.execute(query)
@@ -249,6 +249,17 @@ class Database:
                 return [row[0] for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Failed to fetch active tickers: {e}")
+            return []
+
+    def get_all_tickers(self) -> List[str]:
+        """Fetch all tickers from the database."""
+        query = "SELECT symbol FROM tickers ORDER BY symbol"
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute(query)
+                return [row[0] for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Failed to fetch all tickers: {e}")
             return []
 
     def add_ticker(self, symbol: str):
