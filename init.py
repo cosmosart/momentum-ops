@@ -68,7 +68,22 @@ def initial_data_fetch():
     logger.info(f"Fetching initial data for {ticker}...")
     
     db = Database()
-    db.connect()
+    
+    # Ensure database connection is established before proceeding
+    max_retries = 30
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        if db.connect():
+            logger.info("Database connection successful for initial data fetch")
+            break
+        logger.warning(f"Database not ready for initial data fetch, retrying... ({retry_count + 1}/{max_retries})")
+        time.sleep(2)
+        retry_count += 1
+    
+    if retry_count >= max_retries:
+        logger.error("Failed to connect to database for initial data fetch after maximum retries")
+        return
     
     try:
         fetcher = DataFetcher(ticker)
