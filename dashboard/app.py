@@ -61,7 +61,10 @@ def main():
         
         if db.connect():
             ticker_list = db.get_all_tickers()
+            st.write(f"DEBUG: Found {len(ticker_list)} tickers: {ticker_list}")  # Debug line
             db.close()
+        else:
+            st.warning("Could not connect to database to fetch tickers")  # Debug line
         
         # If ticker list is available, use selectbox with search
         if ticker_list:
