@@ -4,7 +4,8 @@ from ingestion.scheduler import DataScheduler
 scheduler = DataScheduler()
 scheduler.start()
 # Keep main thread alive without sleep hack if using BackgroundScheduler
-import signal, time
+import signal
+import time
 try:
     while True: time.sleep(1)
 except KeyboardInterrupt:

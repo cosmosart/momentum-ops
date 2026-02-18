@@ -25,7 +25,7 @@ services:
   scheduler:
     build: .
     container_name: momentum-scheduler
-    command: python -c "from ingestion.scheduler import DataScheduler; import time; scheduler = DataScheduler(); scheduler.start(); print('Scheduler started'); time.sleep(999999)"
+    command: python run_scheduler.py
     environment:
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
@@ -61,6 +61,12 @@ services:
         condition: service_started
     networks:
       - momentum-network
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
     restart: unless-stopped
 
 networks:

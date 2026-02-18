@@ -10,7 +10,6 @@ import numpy as np
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -25,6 +24,9 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
         DataFrame with calculated indicators
     """
     try:
+        if len(df) < 26:
+            logger.warning(f"Insufficient data for indicators. Need at least 26 rows, got {len(df)}")
+        
         indicators = pd.DataFrame(index=df.index)
         
         # Calculate RSI (14-period)

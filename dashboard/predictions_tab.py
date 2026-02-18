@@ -64,7 +64,7 @@ def render_predictions_tab(ticker: str):
             
             with col1:
                 pred_1d = analysis.get('prediction_1d')
-                if pred_1d:
+                if pred_1d and current_price != 0:
                     change_1d = pred_1d - current_price
                     change_pct_1d = (change_1d / current_price) * 100
                     st.metric(
@@ -72,12 +72,14 @@ def render_predictions_tab(ticker: str):
                         f"${pred_1d:.2f}",
                         f"{change_pct_1d:.2f}%"
                     )
+                elif pred_1d:
+                    st.metric("1 Day", f"${pred_1d:.2f}")
                 else:
                     st.metric("1 Day", "N/A")
             
             with col2:
                 pred_1w = analysis.get('prediction_1w')
-                if pred_1w:
+                if pred_1w and current_price != 0:
                     change_1w = pred_1w - current_price
                     change_pct_1w = (change_1w / current_price) * 100
                     st.metric(
@@ -85,12 +87,14 @@ def render_predictions_tab(ticker: str):
                         f"${pred_1w:.2f}",
                         f"{change_pct_1w:.2f}%"
                     )
+                elif pred_1w:
+                    st.metric("1 Week", f"${pred_1w:.2f}")
                 else:
                     st.metric("1 Week", "N/A")
             
             with col3:
                 pred_1m = analysis.get('prediction_1m')
-                if pred_1m:
+                if pred_1m and current_price != 0:
                     change_1m = pred_1m - current_price
                     change_pct_1m = (change_1m / current_price) * 100
                     st.metric(
@@ -98,12 +102,14 @@ def render_predictions_tab(ticker: str):
                         f"${pred_1m:.2f}",
                         f"{change_pct_1m:.2f}%"
                     )
+                elif pred_1m:
+                    st.metric("1 Month", f"${pred_1m:.2f}")
                 else:
                     st.metric("1 Month", "N/A")
             
             with col4:
                 pred_1y = analysis.get('prediction_1y')
-                if pred_1y:
+                if pred_1y and current_price != 0:
                     change_1y = pred_1y - current_price
                     change_pct_1y = (change_1y / current_price) * 100
                     st.metric(
@@ -111,6 +117,8 @@ def render_predictions_tab(ticker: str):
                         f"${pred_1y:.2f}",
                         f"{change_pct_1y:.2f}%"
                     )
+                elif pred_1y:
+                    st.metric("1 Year", f"${pred_1y:.2f}")
                 else:
                     st.metric("1 Year", "N/A")
             
@@ -147,7 +155,7 @@ def render_predictions_tab(ticker: str):
             
             # Add current price point
             fig.add_trace(go.Scatter(
-                x=[df_prices.iloc[0]['date']],
+                x=[df_prices.iloc[-1]['date']],
                 y=[current_price],
                 mode='markers',
                 name='Current Price',
@@ -156,7 +164,7 @@ def render_predictions_tab(ticker: str):
             
             # Add prediction points (relative to last date)
             if forecast_data:
-                last_date = pd.to_datetime(df_prices.iloc[0]['date'])
+                last_date = pd.to_datetime(df_prices.iloc[-1]['date'])
                 pred_dates = [last_date + pd.Timedelta(days=f['days']) for f in forecast_data]
                 pred_prices = [f['price'] for f in forecast_data]
                 pred_labels = [f['label'] for f in forecast_data]

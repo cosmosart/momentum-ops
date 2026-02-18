@@ -14,8 +14,7 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Get module-level logger (configuration is handled by application entry points)
 logger = logging.getLogger(__name__)
 
 

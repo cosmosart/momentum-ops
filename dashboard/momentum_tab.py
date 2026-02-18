@@ -70,9 +70,16 @@ def render_momentum_tab(ticker: str):
                 st.metric("MACD", "N/A")
         
         with col4:
-            price_change = df.iloc[-1]['close'] - df.iloc[-2]['close']
-            price_change_pct = (price_change / df.iloc[-2]['close']) * 100
-            st.metric("Daily Change", f"{price_change_pct:.2f}%", f"${price_change:.2f}")
+            if len(df) >= 2:
+                prev_close = df.iloc[-2]['close']
+                price_change = df.iloc[-1]['close'] - prev_close
+                if prev_close != 0:
+                    price_change_pct = (price_change / prev_close) * 100
+                    st.metric("Daily Change", f"{price_change_pct:.2f}%", f"${price_change:.2f}")
+                else:
+                    st.metric("Daily Change", "N/A", f"${price_change:.2f}")
+            else:
+                st.metric("Daily Change", "N/A")
         
         st.divider()
         
