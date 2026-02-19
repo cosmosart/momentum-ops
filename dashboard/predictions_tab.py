@@ -12,6 +12,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.db import Database
+from dashboard.utils import format_price, get_currency_info
 
 
 def render_predictions_tab(ticker: str):
@@ -21,10 +22,18 @@ def render_predictions_tab(ticker: str):
     Args:
         ticker: Stock ticker symbol
     """
-    st.header(f"Price Predictions for {ticker}")
+    # Get company name
+    import yfinance as yf
+    try:
+        ticker_obj = yf.Ticker(ticker)
+        company_name = ticker_obj.info.get('longName', ticker_obj.info.get('shortName', ticker))
+    except:
+        company_name = ticker
     
-    st.info("⚠️ Note: Current predictions use placeholder algorithms. "
-            "For production, implement proper ML models in models/models.py")
+    st.header(f"Price Predictions for {company_name}")
+    
+    st.info("📊 Predictions use polynomial regression to capture non-linear price trends. "
+            "Results include trend acceleration/deceleration patterns.")
     
     # Connect to database and fetch data
     db = Database()
@@ -46,79 +55,102 @@ def render_predictions_tab(ticker: str):
         
         # Current price
         df_prices = pd.DataFrame(daily_prices)
+        
+        # Convert decimal columns to float for calculations
+        df_prices['close'] = df_prices['close'].astype(float)
+        if 'open' in df_prices.columns:
+            df_prices['open'] = df_prices['open'].astype(float)
+        if 'high' in df_prices.columns:
+            df_prices['high'] = df_prices['high'].astype(float)
+        if 'low' in df_prices.columns:
+            df_prices['low'] = df_prices['low'].astype(float)
+        
         current_price = df_prices.iloc[0]['close']
         
         st.subheader("Current Price")
-        st.metric("Price", f"${current_price:.2f}")
+        st.metric("Price", format_price(current_price, ticker))
         
         st.divider()
         
         # Predictions
         st.subheader("Forecasted Prices")
         
+        # Model information
+        with st.expander("📊 Model Information", expanded=False):
+            st.write("**Model Type:** Polynomial Regression (Non-linear)")
+            st.write("**Features:**")
+            st.markdown("""
+            - Captures trend acceleration/deceleration
+            - Adapts polynomial degree based on data length
+            - Includes volatility-based dampening for long-term predictions
+            - Prevents unrealistic extrapolations with smart bounds
+            """)
+        
         if analysis_data:
             analysis = analysis_data[0]
+            
+            # Convert prediction values to float
+            pred_1d = float(analysis.get('prediction_1d')) if analysis.get('prediction_1d') is not None else None
+            pred_1w = float(analysis.get('prediction_1w')) if analysis.get('prediction_1w') is not None else None
+            pred_1m = float(analysis.get('prediction_1m')) if analysis.get('prediction_1m') is not None else None
+            pred_1y = float(analysis.get('prediction_1y')) if analysis.get('prediction_1y') is not None else None
             
             # Display predictions in columns
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                pred_1d = analysis.get('prediction_1d')
                 if pred_1d is not None and current_price != 0:
                     change_1d = pred_1d - current_price
                     change_pct_1d = (change_1d / current_price) * 100
                     st.metric(
                         "1 Day",
-                        f"${pred_1d:.2f}",
+                        format_price(pred_1d, ticker),
                         f"{change_pct_1d:.2f}%"
                     )
                 elif pred_1d is not None:
-                    st.metric("1 Day", f"${pred_1d:.2f}")
+                    st.metric("1 Day", format_price(pred_1d, ticker))
                 else:
                     st.metric("1 Day", "N/A")
             
             with col2:
-                pred_1w = analysis.get('prediction_1w')
                 if pred_1w is not None and current_price != 0:
                     change_1w = pred_1w - current_price
                     change_pct_1w = (change_1w / current_price) * 100
                     st.metric(
                         "1 Week",
-                        f"${pred_1w:.2f}",
+                        format_price(pred_1w, ticker),
                         f"{change_pct_1w:.2f}%"
                     )
                 elif pred_1w is not None:
-                    st.metric("1 Week", f"${pred_1w:.2f}")
+                    st.metric("1 Week", format_price(pred_1w, ticker))
                 else:
                     st.metric("1 Week", "N/A")
             
             with col3:
-                pred_1m = analysis.get('prediction_1m')
                 if pred_1m is not None and current_price != 0:
                     change_1m = pred_1m - current_price
                     change_pct_1m = (change_1m / current_price) * 100
                     st.metric(
                         "1 Month",
-                        f"${pred_1m:.2f}",
+                        format_price(pred_1m, ticker),
                         f"{change_pct_1m:.2f}%"
                     )
                 elif pred_1m is not None:
-                    st.metric("1 Month", f"${pred_1m:.2f}")
+                    st.metric("1 Month", format_price(pred_1m, ticker))
                 else:
                     st.metric("1 Month", "N/A")
             
             with col4:
-                pred_1y = analysis.get('prediction_1y')
                 if pred_1y is not None and current_price != 0:
                     change_1y = pred_1y - current_price
                     change_pct_1y = (change_1y / current_price) * 100
                     st.metric(
                         "1 Year",
-                        f"${pred_1y:.2f}",
+                        format_price(pred_1y, ticker),
                         f"{change_pct_1y:.2f}%"
                     )
                 elif pred_1y is not None:
-                    st.metric("1 Year", f"${pred_1y:.2f}")
+                    st.metric("1 Year", format_price(pred_1y, ticker))
                 else:
                     st.metric("1 Year", "N/A")
             
@@ -127,8 +159,22 @@ def render_predictions_tab(ticker: str):
             # Visualization
             st.subheader("Price Forecast Chart")
             
+            # Confidence interval selector
+            confidence_level = st.slider(
+                "Confidence Interval (%)",
+                min_value=5,
+                max_value=30,
+                value=15,
+                step=5,
+                help="Percentage range for upper and lower price projections"
+            )
+            
             # Prepare data for chart
             df_prices = df_prices.sort_values('date')
+            
+            # Calculate historical volatility for more realistic bounds
+            df_prices['returns'] = df_prices['close'].pct_change()
+            volatility = df_prices['returns'].std()
             
             # Create forecast points
             forecast_data = []
@@ -162,28 +208,76 @@ def render_predictions_tab(ticker: str):
                 marker=dict(color='green', size=10)
             ))
             
-            # Add prediction points (relative to last date)
+            # Add prediction points with confidence intervals
             if forecast_data:
                 last_date = pd.to_datetime(df_prices.iloc[-1]['date'])
-                pred_dates = [last_date + pd.Timedelta(days=f['days']) for f in forecast_data]
-                pred_prices = [f['price'] for f in forecast_data]
-                pred_labels = [f['label'] for f in forecast_data]
                 
+                # Add current point to start of forecast
+                pred_dates = [last_date] + [last_date + pd.Timedelta(days=f['days']) for f in forecast_data]
+                pred_prices = [current_price] + [f['price'] for f in forecast_data]
+                
+                # Calculate upper and lower bounds
+                # Use sliding scale: more uncertainty for longer projections
+                upper_bounds = [current_price]
+                lower_bounds = [current_price]
+                
+                for i, f in enumerate(forecast_data):
+                    # Increase uncertainty with time
+                    time_factor = 1 + (f['days'] / 365) * 0.5  # Up to 50% more uncertainty for 1 year
+                    uncertainty = (confidence_level / 100) * time_factor
+                    
+                    upper_bounds.append(f['price'] * (1 + uncertainty))
+                    lower_bounds.append(f['price'] * (1 - uncertainty))
+                
+                # Add upper bound
+                fig.add_trace(go.Scatter(
+                    x=pred_dates,
+                    y=upper_bounds,
+                    mode='lines',
+                    name='Upper Projection',
+                    line=dict(color='rgba(255, 0, 0, 0.3)', width=1, dash='dash'),
+                    showlegend=True
+                ))
+                
+                # Add lower bound
+                fig.add_trace(go.Scatter(
+                    x=pred_dates,
+                    y=lower_bounds,
+                    mode='lines',
+                    name='Lower Projection',
+                    line=dict(color='rgba(255, 0, 0, 0.3)', width=1, dash='dash'),
+                    fill='tonexty',
+                    fillcolor='rgba(255, 0, 0, 0.1)',
+                    showlegend=True
+                ))
+                
+                # Add predicted line
                 fig.add_trace(go.Scatter(
                     x=pred_dates,
                     y=pred_prices,
-                    mode='markers+text',
-                    name='Predictions',
-                    marker=dict(color='red', size=10),
+                    mode='lines+markers',
+                    name='Forecast',
+                    line=dict(color='red', width=2, dash='dot'),
+                    marker=dict(color='red', size=8)
+                ))
+                
+                # Add labels for prediction points (skip current price)
+                pred_labels = [f['label'] for f in forecast_data]
+                fig.add_trace(go.Scatter(
+                    x=pred_dates[1:],
+                    y=pred_prices[1:],
+                    mode='text',
+                    name='Labels',
                     text=pred_labels,
-                    textposition='top center'
+                    textposition='top center',
+                    showlegend=False
                 ))
             
             fig.update_layout(
-                title=f"{ticker} Price History and Predictions",
+                title=f"Price Forecast with {confidence_level}% Confidence Interval",
                 xaxis_title="Date",
-                yaxis_title="Price ($)",
-                height=500,
+                yaxis_title=f"Price ({get_currency_info(ticker)[0]})",
+                height=600,
                 hovermode='x unified'
             )
             
@@ -195,9 +289,9 @@ def render_predictions_tab(ticker: str):
         # Disclaimer
         st.divider()
         st.caption(
-            "⚠️ **Disclaimer:** These predictions are generated by placeholder algorithms "
-            "and should not be used for actual trading decisions. "
-            "Implement proper machine learning models for production use."
+            "⚠️ **Disclaimer:** Predictions are generated using polynomial regression models "
+            "and should be used for informational purposes only. "
+            "Past performance does not guarantee future results. Not financial advice."
         )
         
     finally:

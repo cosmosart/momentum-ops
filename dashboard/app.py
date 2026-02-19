@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db import Database
 from dashboard.momentum_tab import render_momentum_tab
 from dashboard.predictions_tab import render_predictions_tab
+from dashboard.ticker_management_tab import render_ticker_management
 
 # Load environment variables
 load_dotenv()
@@ -61,24 +62,42 @@ def main():
         
         if db.connect():
             ticker_list = db.get_all_tickers()
-            st.write(f"DEBUG: Found {len(ticker_list)} tickers: {ticker_list}")  # Debug line
             db.close()
-        else:
-            st.warning("Could not connect to database to fetch tickers")  # Debug line
         
         # If ticker list is available, use selectbox with search
         if ticker_list:
+            # Get company names for tickers
+            import yfinance as yf
+            ticker_display_map = {}
+            ticker_to_symbol = {}
+            
+            for symbol in ticker_list:
+                try:
+                    ticker_obj = yf.Ticker(symbol)
+                    company_name = ticker_obj.info.get('longName', ticker_obj.info.get('shortName', symbol))
+                    display_name = f"{company_name} ({symbol})"
+                except:
+                    display_name = symbol
+                
+                ticker_display_map[symbol] = display_name
+                ticker_to_symbol[display_name] = symbol
+            
             # Set default index
             default_index = 0
+            display_options = [ticker_display_map[t] for t in ticker_list]
+            
             if default_ticker in ticker_list:
                 default_index = ticker_list.index(default_ticker)
             
-            ticker = st.selectbox(
+            selected_display = st.selectbox(
                 "Stock Ticker Selection",
-                options=ticker_list,
+                options=display_options,
                 index=default_index,
                 help="Search and select a stock ticker symbol"
             )
+            
+            # Get actual ticker symbol from selection
+            ticker = ticker_to_symbol[selected_display]
         else:
             # Fallback to text input if no tickers in database
             ticker = st.text_input(
@@ -109,13 +128,16 @@ def main():
         )
     
     # Main content area with tabs
-    tab1, tab2 = st.tabs(["📊 Momentum Analysis", "🔮 Predictions"])
+    tab1, tab2, tab3 = st.tabs(["📊 Momentum Analysis", "🔮 Predictions", "⚙️ Manage Tickers"])
     
     with tab1:
         render_momentum_tab(ticker)
     
     with tab2:
         render_predictions_tab(ticker)
+    
+    with tab3:
+        render_ticker_management()
 
 
 if __name__ == "__main__":

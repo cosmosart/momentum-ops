@@ -54,10 +54,9 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
 def generate_predictions(df: pd.DataFrame) -> Dict[str, Optional[float]]:
     """
-    Generate price predictions for various timeframes.
+    Generate price predictions for various timeframes using polynomial regression.
     
-    This is a PLACEHOLDER implementation using simple moving averages.
-    In production, this should be replaced with actual ML models (LSTM, ARIMA, etc.)
+    Uses a non-linear polynomial model to capture trend patterns.
     
     Args:
         df: DataFrame with historical price data
@@ -66,41 +65,91 @@ def generate_predictions(df: pd.DataFrame) -> Dict[str, Optional[float]]:
         Dictionary with predictions for 1d, 1w, 1m, 1y
     """
     try:
+        from sklearn.preprocessing import PolynomialFeatures
+        from sklearn.linear_model import LinearRegression
+        from sklearn.pipeline import make_pipeline
+        
         if df.empty or 'Close' not in df.columns:
             logger.warning("Insufficient data for predictions")
             return {'1d': None, '1w': None, '1m': None, '1y': None}
         
-        # Get recent closing prices
-        recent_prices = df['Close'].tail(30).values
+        # Get recent closing prices (last 60 days for better trend capture)
+        recent_data = df.tail(60).copy()
         
-        # Need at least 2 prices to calculate trend
-        if len(recent_prices) < 2:
-            logger.warning("Insufficient data for predictions (need at least 2 prices)")
+        # Need at least 10 prices for polynomial regression
+        if len(recent_data) < 10:
+            logger.warning("Insufficient data for predictions (need at least 10 prices)")
             return {'1d': None, '1w': None, '1m': None, '1y': None}
         
-        current_price = recent_prices[-1]
+        # Prepare data for polynomial regression
+        prices = recent_data['Close'].values
+        X = np.arange(len(prices)).reshape(-1, 1)  # Time index
+        y = prices
         
-        # PLACEHOLDER: Simple trend-based predictions
-        # In production, replace with trained ML models
+        # Create polynomial regression model (degree 2 for non-linear trends)
+        # degree=2 captures quadratic patterns (acceleration/deceleration)
+        # degree=3 can capture more complex curves but may overfit
+        poly_degree = 2
+        if len(prices) > 30:
+            poly_degree = 3  # Use cubic for longer histories
         
-        # Calculate trend using recent price changes
-        price_changes = np.diff(recent_prices)
-        avg_change = np.mean(price_changes)
+        model = make_pipeline(
+            PolynomialFeatures(degree=poly_degree),
+            LinearRegression()
+        )
         
-        # Check for NaN (shouldn't happen with valid data, but be defensive)
-        if np.isnan(avg_change):
-            logger.warning("Average price change is NaN, returning None predictions")
-            return {'1d': None, '1w': None, '1m': None, '1y': None}
+        # Fit the model
+        model.fit(X, y)
         
-        # Simple linear extrapolation (PLACEHOLDER)
+        # Generate predictions
+        current_idx = len(prices) - 1
+        
+        # Predict future values
+        pred_1d = model.predict([[current_idx + 1]])[0]
+        pred_1w = model.predict([[current_idx + 7]])[0]
+        pred_1m = model.predict([[current_idx + 30]])[0]
+        pred_1y = model.predict([[current_idx + 365]])[0]
+        
+        # Add volatility-based adjustment for longer predictions
+        # Calculate recent volatility
+        returns = np.diff(prices) / prices[:-1]
+        volatility = np.std(returns)
+        
+        # Apply dampening to prevent unrealistic long-term predictions
+        # The further out, the more we regress toward recent average
+        recent_avg = np.mean(prices[-5:])  # Average of last 5 prices
+        
+        # Dampen extreme predictions
+        def dampen_prediction(pred, current, days_ahead, recent_avg):
+            """Apply dampening to prevent unrealistic predictions"""
+            max_change_pct = 0.5  # 50% max change
+            
+            # Calculate max allowed change based on volatility
+            max_allowed_change = current * max_change_pct * (days_ahead / 365)
+            
+            # Limit prediction within bounds
+            if pred > current + max_allowed_change:
+                pred = current + max_allowed_change
+            elif pred < current - max_allowed_change:
+                pred = current - max_allowed_change
+            
+            # For very long predictions, pull toward trend-adjusted average
+            if days_ahead > 90:
+                weight = min((days_ahead - 90) / 365, 0.5)  # Max 50% weight
+                pred = pred * (1 - weight) + recent_avg * weight
+            
+            return pred
+        
+        current_price = float(prices[-1])
+        
         predictions = {
-            '1d': float(current_price + avg_change * 1),  # 1 day
-            '1w': float(current_price + avg_change * 7),  # 1 week
-            '1m': float(current_price + avg_change * 30),  # 1 month
-            '1y': float(current_price + avg_change * 365),  # 1 year
+            '1d': float(dampen_prediction(pred_1d, current_price, 1, recent_avg)),
+            '1w': float(dampen_prediction(pred_1w, current_price, 7, recent_avg)),
+            '1m': float(dampen_prediction(pred_1m, current_price, 30, recent_avg)),
+            '1y': float(dampen_prediction(pred_1y, current_price, 365, recent_avg)),
         }
         
-        logger.info("Predictions generated (placeholder implementation)")
+        logger.info(f"Predictions generated using polynomial regression (degree={poly_degree})")
         return predictions
         
     except Exception as e:

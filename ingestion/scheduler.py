@@ -128,6 +128,12 @@ class DataScheduler:
         """
         logger.info("Starting ingestion cycle...")
         
+        # Ensure database connection
+        if not self.db.conn or (hasattr(self.db.conn, 'closed') and self.db.conn.closed):
+            if not self.db.connect():
+                logger.error("Database connection failed; aborting ingestion cycle")
+                return
+        
         # dynamic_tickers will contain ONLY the rows where is_active = true
         dynamic_tickers = self.db.get_active_tickers()
         
@@ -153,6 +159,10 @@ class DataScheduler:
         
         self.scheduler.start()
         logger.info(f"Scheduler started. Running every {update_interval} minutes.")
+        
+        # Run immediately on startup
+        logger.info("Running initial ingestion cycle...")
+        self.run_ingestion_cycle()
     
     def stop(self):
         """Stop the scheduler."""
