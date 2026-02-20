@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db import Database
 from dashboard.momentum_tab import render_momentum_tab
 from dashboard.predictions_tab import render_predictions_tab
+from dashboard.ai_advisor_tab import render_ai_advisor_tab
 from dashboard.ticker_management_tab import render_ticker_management
 
 # Load environment variables
@@ -33,23 +34,12 @@ st.markdown("""
     .main {
         padding: 0rem 1rem;
     }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 2rem;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        padding-left: 2rem;
-        padding-right: 2rem;
-    }
     </style>
     """, unsafe_allow_html=True)
 
 
 def main():
     """Main dashboard application."""
-    
-    # Title
-    st.title("📈 Momentum Ops - Market Analysis Dashboard")
     
     # Sidebar
     with st.sidebar:
@@ -107,6 +97,24 @@ def main():
             ).upper()
         
         st.divider()
+
+        # Page navigation
+        _nav_options = [
+            "🎯 Directional Outlook",
+            "📊 Momentum Analysis",
+            "🤖 AI Advisor (Gen Prompt)",
+            "⚙️ Manage Tickers",
+        ]
+        page = st.pills(
+            "Navigation",
+            options=_nav_options,
+            default=_nav_options[0],
+            label_visibility="collapsed",
+        )
+        if page is None:
+            page = _nav_options[0]
+        
+        st.divider()
         
         # Database connection status
         st.subheader("Database Status")
@@ -124,19 +132,17 @@ def main():
         st.subheader("About")
         st.info(
             "Momentum Ops provides real-time market analysis with technical indicators "
-            "and price predictions for stocks."
+            "and XGBoost-based directional probability scores for stocks."
         )
     
-    # Main content area with tabs
-    tab1, tab2, tab3 = st.tabs(["📊 Momentum Analysis", "🔮 Predictions", "⚙️ Manage Tickers"])
-    
-    with tab1:
+    # Main content area — render selected page
+    if page == "📊 Momentum Analysis":
         render_momentum_tab(ticker)
-    
-    with tab2:
+    elif page == "🎯 Directional Outlook":
         render_predictions_tab(ticker)
-    
-    with tab3:
+    elif page == "🤖 AI Advisor (Gen Prompt)":
+        render_ai_advisor_tab(ticker)
+    elif page == "⚙️ Manage Tickers":
         render_ticker_management()
 
 

@@ -32,7 +32,12 @@ CREATE TABLE IF NOT EXISTS price_daily (
 );
 
 -- Table: analysis_info
--- Stores technical analysis indicators and predictions
+-- Stores technical indicators and directional-probability output.
+-- Four targeted strategy models (single container, multi-model inference):
+--   prob_active_1w         — high-risk short-term momentum
+--   prob_conservative_1mo  — foundational mid-term
+--   prob_conservative_6mo  — foundational long-term
+--   prob_experimental      — next-business-day directional prediction
 CREATE TABLE IF NOT EXISTS analysis_info (
     id SERIAL PRIMARY KEY,
     ticker VARCHAR(10) NOT NULL,
@@ -41,10 +46,19 @@ CREATE TABLE IF NOT EXISTS analysis_info (
     macd DECIMAL(10, 4),
     macd_signal DECIMAL(10, 4),
     macd_hist DECIMAL(10, 4),
-    prediction_1d DECIMAL(10, 2),
-    prediction_1w DECIMAL(10, 2),
-    prediction_1m DECIMAL(10, 2),
-    prediction_1y DECIMAL(10, 2),
+    bb_upper DECIMAL(12, 4),
+    bb_middle DECIMAL(12, 4),
+    bb_lower DECIMAL(12, 4),
+    -- Four targeted strategy-model probabilities
+    prob_active_1w         REAL,
+    prob_conservative_1mo  REAL,
+    prob_conservative_6mo  REAL,
+    prob_experimental      REAL,
+    -- Per-model local feature contributions (top-3 TreeSHAP values)
+    features_active_1w         JSONB,
+    features_conservative_1mo  JSONB,
+    features_conservative_6mo  JSONB,
+    features_experimental      JSONB,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(ticker, date)
 );

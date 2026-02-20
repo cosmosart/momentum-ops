@@ -93,7 +93,7 @@ def render_momentum_tab(ticker: str):
         ma_types = st.multiselect(
             "MA Type",
             options=["SMA", "EMA"],
-            default=["SMA"],
+            default=["EMA"],
             help="Simple Moving Average (SMA) and/or Exponential Moving Average (EMA)"
         )
     
@@ -101,7 +101,7 @@ def render_momentum_tab(ticker: str):
         ma_periods = st.multiselect(
             "Moving Averages",
             options=["5", "10", "20", "50", "100", "200"],
-            default=["20", "50"],
+            default=["10", "20"],
             help="Select moving average periods to display on price chart"
         )
     

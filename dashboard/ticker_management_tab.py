@@ -73,9 +73,22 @@ def render_ticker_management():
         
         if add_button:
             if new_ticker:
-                db.add_ticker(new_ticker)
-                st.success(f"✅ Added ticker: {new_ticker}")
-                st.rerun()
+                # Validate ticker exists via yfinance
+                import yfinance as yf
+                try:
+                    info = yf.Ticker(new_ticker).info
+                    # yfinance returns a near-empty dict for invalid symbols
+                    if not info or info.get("trailingPegRatio") is None and info.get("regularMarketPrice") is None and info.get("currentPrice") is None and info.get("previousClose") is None:
+                        raise ValueError("no price data")
+                    db.add_ticker(new_ticker)
+                    name = info.get("longName", info.get("shortName", new_ticker))
+                    st.success(f"✅ Added ticker: **{new_ticker}** ({name})")
+                    st.rerun()
+                except Exception:
+                    st.error(
+                        f"❌ Ticker **{new_ticker}** could not be found. "
+                        "Please verify the symbol is valid (e.g. AAPL, 7203.T, 005930.KS)."
+                    )
             else:
                 st.warning("Please enter a ticker symbol")
         

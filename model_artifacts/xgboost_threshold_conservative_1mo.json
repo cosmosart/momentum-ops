@@ -1,0 +1,9 @@
+{
+  "registry_key": "conservative_1mo",
+  "horizon": "1mo",
+  "trading_days": 21,
+  "hurdle": 0.03,
+  "threshold": 0.5314,
+  "scale_pos_weight": 1.9746,
+  "positive_class_pct": 33.62
+}

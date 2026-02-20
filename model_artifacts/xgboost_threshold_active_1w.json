@@ -1,0 +1,9 @@
+{
+  "registry_key": "active_1w",
+  "horizon": "1w",
+  "trading_days": 5,
+  "hurdle": 0.015,
+  "threshold": 0.4757,
+  "scale_pos_weight": 2.5376,
+  "positive_class_pct": 28.27
+}
