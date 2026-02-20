@@ -85,5 +85,4 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      # Host path for model artifacts. Override MODEL_ARTIFACTS_HOST_PATH in your environment for non-TrueNAS systems.
-      device: ${MODEL_ARTIFACTS_HOST_PATH:-/mnt/Main/Apps/momentum_models}
+      device: ${MODEL_ARTIFACTS_HOST_PATH:?Set MODEL_ARTIFACTS_HOST_PATH in .env}

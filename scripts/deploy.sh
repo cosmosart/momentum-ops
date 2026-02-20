@@ -10,13 +10,18 @@ set -euo pipefail
 #   ./scripts/deploy.sh                # rsync all model artifacts
 # ---------------------------------------------------------------------------
 
-TRUENAS_USER="eli"
-TRUENAS_IP="172.27.1.45"
-TARGET_DIR="/mnt/Main/Apps/momentum_models"
+# Load env vars from .env (if present)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+[[ -f "$PROJECT_ROOT/.env" ]] && set -a && source "$PROJECT_ROOT/.env" && set +a
 
-echo "Deploying XGBoost models to TrueNAS..."
+DEPLOY_USER="${DEPLOY_USER:?Set DEPLOY_USER in .env}"
+DEPLOY_HOST="${DEPLOY_HOST:?Set DEPLOY_HOST in .env}"
+DEPLOY_MODEL_DIR="${DEPLOY_MODEL_DIR:?Set DEPLOY_MODEL_DIR in .env}"
+
+echo "Deploying XGBoost models to ${DEPLOY_HOST}..."
 rsync -avz --progress ./model_artifacts/xgboost_*.json \
-    "${TRUENAS_USER}@${TRUENAS_IP}:${TARGET_DIR}/"
+    "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_MODEL_DIR}/"
 
 echo ""
 echo "Artifacts synced:"

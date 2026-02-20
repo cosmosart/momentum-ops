@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ---------------------------------------------------------------------------
 # build_and_upload.sh — Build ONE production container, push to Docker Hub,
-#                       and sync all model artifacts to TrueNAS.
+#                       and sync all model artifacts to the remote server.
 #
 # The single container loads ALL strategy models (conservative, active,
 # experimental) from the shared model_artifacts/ volume and runs multi-model
@@ -18,10 +18,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-TRUENAS_USER="eli"
-TRUENAS_IP="172.27.1.45"
-REMOTE_APP_DIR="/mnt/Main/Apps/momentum-ops"
-REMOTE_MODEL_DIR="/mnt/Main/Apps/momentum_models"
+# Load env vars from .env (if present)
+[[ -f "$PROJECT_ROOT/.env" ]] && set -a && source "$PROJECT_ROOT/.env" && set +a
+
+DEPLOY_USER="${DEPLOY_USER:?Set DEPLOY_USER in .env}"
+DEPLOY_HOST="${DEPLOY_HOST:?Set DEPLOY_HOST in .env}"
+REMOTE_APP_DIR="${DEPLOY_APP_DIR:?Set DEPLOY_APP_DIR in .env}"
+REMOTE_MODEL_DIR="${DEPLOY_MODEL_DIR:?Set DEPLOY_MODEL_DIR in .env}"
 
 REGISTRY="cosmosart"
 IMAGE_NAME="momentum-ops"
@@ -73,12 +76,12 @@ cd "$PROJECT_ROOT"
 # Models-only shortcut
 # ---------------------------------------------------------------------------
 if $MODELS_ONLY; then
-    log "Uploading model artifacts to ${TRUENAS_IP}:${REMOTE_MODEL_DIR}/"
+    log "Uploading model artifacts to ${DEPLOY_HOST}:${REMOTE_MODEL_DIR}/"
     if [[ ! -d model_artifacts ]] || [[ -z "$(ls model_artifacts/xgboost_*.json 2>/dev/null)" ]]; then
         fail "No model artifacts found in model_artifacts/. Run train_local.py first."
     fi
     rsync -avz --progress model_artifacts/xgboost_*.json \
-        "${TRUENAS_USER}@${TRUENAS_IP}:${REMOTE_MODEL_DIR}/"
+        "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_MODEL_DIR}/"
     ok "Model artifacts uploaded. Scheduler will pick them up on next cycle."
     exit 0
 fi
@@ -136,7 +139,7 @@ fi
 if [[ -d model_artifacts ]] && [[ -n "$(ls model_artifacts/xgboost_*.json 2>/dev/null)" ]]; then
     log "Uploading model artifacts..."
     rsync -avz --progress model_artifacts/xgboost_*.json \
-        "${TRUENAS_USER}@${TRUENAS_IP}:${REMOTE_MODEL_DIR}/"
+        "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_MODEL_DIR}/"
     ok "Model artifacts uploaded"
     echo ""
     log "Artifacts synced:"
