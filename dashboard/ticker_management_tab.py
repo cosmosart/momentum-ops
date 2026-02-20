@@ -77,8 +77,10 @@ def render_ticker_management():
                 import yfinance as yf
                 try:
                     info = yf.Ticker(new_ticker).info
-                    # yfinance returns a near-empty dict for invalid symbols
-                    if not info or info.get("trailingPegRatio") is None and info.get("regularMarketPrice") is None and info.get("currentPrice") is None and info.get("previousClose") is None:
+                    # yfinance returns a near-empty dict for invalid symbols, or dicts without any usable price fields
+                    price_keys = ("trailingPegRatio", "regularMarketPrice", "currentPrice", "previousClose")
+                    has_price_data = any(info.get(k) is not None for k in price_keys)
+                    if not info or not has_price_data:
                         raise ValueError("no price data")
                     db.add_ticker(new_ticker)
                     name = info.get("longName", info.get("shortName", new_ticker))
