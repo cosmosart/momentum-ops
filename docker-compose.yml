@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:18-alpine
     container_name: momentum-postgres
     environment:
       POSTGRES_DB: ${DB_NAME:-momentum_db}
@@ -23,9 +23,11 @@ services:
     restart: unless-stopped
 
   scheduler:
-    build: .
+    image: cosmosart/momentum-ops:scheduler
     container_name: momentum-scheduler
     command: python run_scheduler.py
+    volumes:
+      - model_artifacts:/app/model_artifacts
     environment:
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
@@ -43,10 +45,12 @@ services:
     restart: unless-stopped
 
   dashboard:
-    build: .
+    image: cosmosart/momentum-ops:latest
     container_name: momentum-dashboard
     ports:
       - "8501:8501"
+    volumes:
+      - model_artifacts:/app/model_artifacts
     environment:
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
@@ -76,3 +80,10 @@ networks:
 volumes:
   postgres_data:
     driver: local
+  model_artifacts:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      # Host path for model artifacts. Override MODEL_ARTIFACTS_HOST_PATH in your environment for non-TrueNAS systems.
+      device: ${MODEL_ARTIFACTS_HOST_PATH:-/mnt/Main/Apps/momentum_models}

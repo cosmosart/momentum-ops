@@ -1,252 +1,181 @@
-# Momentum Ops - Implementation Summary
+# Momentum Ops — Implementation Summary
 
 ## Overview
-Professional market analysis application built with Python, Streamlit, and PostgreSQL for TrueNAS deployment.
 
-## ✅ Completed Components
-
-### 1. Database Layer (PostgreSQL)
-- **schema.sql**: Three tables with proper indexing
-  - `price_realtime`: Intraday price data
-  - `price_daily`: Daily OHLCV data  
-  - `analysis_info`: Technical indicators and predictions
-- **db.py**: Database abstraction with connection management, insert/query methods
-
-### 2. Data Ingestion ("Pure Python")
-- **fetcher.py**: yfinance integration for market data
-  - Real-time intraday data fetching
-  - Historical daily data retrieval
-  - Error handling and logging
-- **scheduler.py**: APScheduler for automated updates
-  - Configurable update intervals
-  - Background job scheduling
-  - Multi-ticker support
-
-### 3. Machine Learning
-- **models.py**: Technical analysis and predictions
-  - RSI indicator (14-period)
-  - MACD indicator (12/26/9)
-  - Placeholder prediction functions (1d, 1w, 1m, 1y)
-  - Clear extension points for ML models (LSTM, ARIMA, Prophet)
-
-### 4. Streamlit Dashboard
-- **app.py**: Main application with tabbed interface
-- **momentum_tab.py**: RSI/MACD analysis
-  - Candlestick price charts
-  - RSI with overbought/oversold zones
-  - MACD with signal line and histogram
-  - Automated signal interpretation
-- **predictions_tab.py**: Price forecasts
-  - Multi-timeframe predictions (1d, 1w, 1m, 1y)
-  - Visual forecast charts
-  - Delta metrics with percentage changes
-
-### 5. Infrastructure (TrueNAS Ready)
-- **Dockerfile**: 
-  - Python 3.11 slim base
-  - Non-root user for security
-  - Health checks with curl
-  - Optimized layer caching
-- **docker-compose.yml**:
-  - PostgreSQL service with data persistence
-  - Scheduler service for data ingestion
-  - Dashboard service (port 8501)
-  - Network isolation
-  - Health checks and restart policies
-
-### 6. Configuration & Documentation
-- **.env.example**: Environment variable templates
-- **requirements.txt**: Python dependencies
-- **README.md**: Comprehensive setup and usage guide
-- **QUICKSTART.md**: Rapid deployment guide
-- **init.py**: Database initialization script
-- **test_components.py**: Component validation tests
-
-## 🔧 Technical Specifications
-
-### Technology Stack
-- **Language**: Python 3.11
-- **Database**: PostgreSQL 15
-- **UI Framework**: Streamlit 1.31.0
-- **Data Source**: yfinance 0.2.35
-- **Scheduler**: APScheduler 3.10.4
-- **Analysis**: pandas, numpy, ta (technical analysis)
-- **Visualization**: Plotly 5.18.0
-- **ML Framework**: scikit-learn 1.4.0 (ready for models)
-
-### Architecture Pattern
-- **Modular Design**: Separated concerns (database, ingestion, models, dashboard)
-- **Configuration Management**: Environment-based (.env files)
-- **Error Handling**: Comprehensive logging and graceful degradation
-- **Containerization**: Multi-container Docker setup with orchestration
-
-### Security Features
-- ✅ Non-root container user
-- ✅ No hardcoded credentials
-- ✅ Environment variable based configuration
-- ✅ SQL injection prevention (parameterized queries)
-- ✅ CodeQL security scan passed
-- ✅ Input validation on database operations
-
-## 📊 Features Delivered
-
-### Data Management
-- ✅ Automated data ingestion (configurable intervals)
-- ✅ Real-time price tracking
-- ✅ Historical data storage (1 year default)
-- ✅ Data persistence with PostgreSQL volumes
-
-### Technical Analysis
-- ✅ RSI (Relative Strength Index)
-- ✅ MACD (Moving Average Convergence Divergence)
-- ✅ Automated signal generation
-- ✅ Buy/sell signal interpretation
-
-### Predictions
-- ✅ 1-day forecast
-- ✅ 1-week forecast
-- ✅ 1-month forecast
-- ✅ 1-year forecast
-- ⚠️ Note: Currently using placeholder algorithm (linear extrapolation)
-
-### User Interface
-- ✅ Interactive dashboard
-- ✅ Multi-tab layout (Momentum, Predictions)
-- ✅ Real-time charts (Plotly)
-- ✅ Metric displays with deltas
-- ✅ Signal interpretation
-- ✅ Database status indicator
-- ✅ Configurable ticker selection
-
-## 🚀 Deployment
-
-### Docker Deployment (Production)
-```bash
-docker-compose up -d
-```
-Access: http://localhost:8501
-
-### Local Development
-```bash
-pip install -r requirements.txt
-streamlit run dashboard/app.py
-```
-
-### TrueNAS Deployment
-1. Upload project files to TrueNAS
-2. Configure .env file
-3. Run: `docker-compose up -d`
-4. Access via TrueNAS_IP:8501
-
-## 📈 Testing Results
-
-### Component Tests
-- ✅ Database module imports
-- ✅ Data fetcher initialization  
-- ✅ Technical indicators (RSI, MACD)
-- ✅ Prediction generation
-- ✅ All modules integrate correctly
-
-### Code Quality
-- ✅ Code review passed (1 issue fixed)
-- ✅ CodeQL security scan: 0 vulnerabilities
-- ✅ Professional code structure
-- ✅ Comprehensive documentation
-- ✅ Type hints and docstrings
-
-## 🔮 Future Enhancements
-
-### Machine Learning (Placeholders Ready)
-The following can be implemented by replacing placeholder functions in `models/models.py`:
-- LSTM neural networks for time series prediction
-- ARIMA statistical forecasting
-- Prophet for seasonal trends
-- Ensemble models for improved accuracy
-
-### Additional Features
-- Multi-ticker portfolio tracking
-- Custom indicator creation
-- Alert system for price movements
-- Backtesting capabilities
-- REST API endpoints
-- User authentication
-
-## 📝 Configuration
-
-### Default Settings (.env)
-```bash
-DB_HOST=postgres
-DB_PORT=5432
-DB_NAME=momentum_db
-DB_USER=momentum_user
-DB_PASSWORD=momentum_password
-DEFAULT_TICKER=AAPL
-UPDATE_INTERVAL_MINUTES=5
-SCHEDULER_TIMEZONE=UTC
-```
-
-### Customization Points
-- Ticker symbols (any valid Yahoo Finance ticker)
-- Update frequency (minutes)
-- Database credentials
-- Time zones
-
-## 📋 File Structure
-```
-momentum-ops/
-├── database/           # PostgreSQL schema and operations
-├── ingestion/          # yfinance fetcher and APScheduler
-├── models/             # Technical analysis and ML placeholders
-├── dashboard/          # Streamlit UI components
-├── Dockerfile          # Container definition
-├── docker-compose.yml  # Multi-container orchestration
-├── requirements.txt    # Python dependencies
-├── init.py            # Database initialization
-├── test_components.py  # Validation tests
-├── README.md          # Full documentation
-├── QUICKSTART.md      # Quick setup guide
-└── .env.example       # Configuration template
-```
-
-## ✨ Highlights
-
-### Professional Quality
-- Modular, maintainable code
-- Comprehensive error handling
-- Extensive documentation
-- Production-ready containerization
-- Security best practices
-
-### Data Engineer Standards
-- Proper data modeling (normalized tables)
-- Efficient indexing strategy
-- Transaction management
-- Connection pooling ready
-- Scalable architecture
-
-### User Experience
-- Intuitive interface
-- Real-time visualizations
-- Clear signal interpretation
-- Responsive design
-- Error messages and guidance
-
-## 🎯 Deliverable Status
-
-All requirements from the problem statement have been met:
-
-1. ✅ **Database**: Tables for price_realtime, price_daily, and analysis_info
-2. ✅ **Ingestion**: yfinance + APScheduler for "pure python" updates
-3. ✅ **Dashboard**: Streamlit with tabs for Momentum (RSI/MACD) and Predictions (1d, 1w, 1m, 1y)
-4. ✅ **ML**: Placeholders for forecasting in models.py
-5. ✅ **Infrastructure**: Dockerfile and docker-compose.yml for TrueNAS deployment
-
-**Standard Achieved**: Professional, modular code suitable for a Data Engineer
+Production-grade market analysis system: automated ingestion, four targeted
+XGBoost directional-probability models with TreeSHAP explainability, an AI
+Advisory prompt generator, and a Streamlit dashboard — deployed as a single
+Docker container on TrueNAS SCALE with decoupled GPU training via NFS.
 
 ---
 
-## 🏁 Ready for Production
+## Completed Components
 
-The momentum-ops application is complete, tested, and ready for deployment!
+### 1. Database Layer (PostgreSQL 18)
 
-**Get Started**: See [QUICKSTART.md](QUICKSTART.md) for deployment instructions.
+- **schema.sql**: 4 tables (`price_realtime`, `price_daily`, `analysis_info`, `tickers`) with proper indexing
+- **db.py**: `Database` class — psycopg 3 with `dict_row`, UPSERT queries (17 parameters), connection management
+- **Migrations**:
+  - `002_add_multi_horizon_columns.sql` — initial multi-horizon columns
+  - `003_add_multi_strategy_columns.sql` — 4 targeted prob columns
+  - `004_drop_dead_columns.sql` — removes 20 legacy columns
+  - `005_add_feature_contributions.sql` — 4 JSONB columns for TreeSHAP
+
+### 2. Data Ingestion
+
+- **fetcher.py**: yfinance integration — real-time + historical OHLCV
+- **scheduler.py**: APScheduler `BackgroundScheduler` (5-min cycle)
+  - yfinance fetch → `engineer_features()` (single pass) → `FourModelPredictor.predict_from_ohlcv()` → TreeSHAP contributions → UPSERT to DB
+  - Serialises JSONB contributions via `_contrib_json()` helper
+
+### 3. Machine Learning
+
+- **features.py**: Single source of truth — 15 `FEATURE_COLUMNS`, `HORIZONS` dict (5 horizons with hurdle rates), `engineer_features()`, `make_target()`
+- **models.py**: `DirectionPredictor` (load, predict, TreeSHAP via `booster.predict(dmatrix, pred_contribs=True)`), `FourModelPredictor` (registry-driven lazy loader), `MODEL_REGISTRY` (4 entries)
+  - `predict_from_ohlcv()` returns `tuple[Dict[probs], Dict[contribs]]`
+- **train_local.py**: Optuna Bayesian HPO, `TimeSeriesSplit` CV, PR-AUC objective, GPU XGBoost (`tree_method=hist, device=cuda`)
+  - `MODEL_DEFAULTS` dict (experimental overfit profile: max_depth=12, n_estimators=2000, no regularization)
+  - `TRAINING_PLAN` maps registry keys to horizons
+  - F1-optimal threshold exported as sidecar JSON
+  - `_derive_threshold_filename()` matches `MODEL_REGISTRY` exactly
+
+### 4. Streamlit Dashboard
+
+- **app.py**: Sidebar navigation (`st.pills`), ticker selector with company names, DB status indicator
+- **predictions_tab.py** (Directional Outlook):
+  - Model selector (`st.pills`) — 4 models
+  - Plotly probability gauge + regime classification
+  - TreeSHAP horizontal bar chart (per-model, from JSONB)
+  - Current Signal Values (RSI, MACD, Bollinger)
+  - All Models Overview (mini gauges)
+  - Signal Interpretation expander
+- **momentum_tab.py**: Candlestick chart, RSI with zones, MACD with histogram
+- **ai_advisor_tab.py**: AI Advisory prompt export
+  - Language selector (8 languages: English, Korean, Japanese, Chinese, Spanish, French, German, Portuguese)
+  - Generates structured Markdown prompt via `prompt_generator.py`
+  - `st.code(..., language="markdown")` with native copy-to-clipboard
+- **prompt_generator.py**: `generate_llm_advisory_prompt()` — 4 sections (Request with web search mandate, Quantitative Data table, XGBoost + SHAP tables, Strategic Context), language instruction appended when non-English
+- **ticker_management_tab.py**: Add (yfinance-validated), deactivate, reactivate tickers
+- **utils.py**: Currency formatting (USD, JPY, KRW, INR, HKD)
+
+### 5. Infrastructure
+
+- **Dockerfile**: Python 3.13 slim, non-root user, health checks
+- **docker-compose.yml**: 3-service stack (postgres:18-alpine, scheduler, dashboard), NFS bind-mount for model artifacts
+- **build_and_upload.sh**: Docker build + push to `cosmosart/momentum-ops` + rsync
+- **deploy.sh**: rsync model artifacts to TrueNAS NFS share
+
+### 6. Documentation
+
+- **README.md**: Comprehensive setup, architecture, schema, training instructions
+- **QUICKSTART.md**: Docker quick start, dashboard pages, troubleshooting
+- **IMPLEMENTATION.md**: This file
+- **docs/architecture/current_state.md**: Mermaid diagram, decoupled compute rationale, multi-model inference, thresholding
+
+---
+
+## Technical Specifications
+
+| Component | Technology |
+|-----------|-----------|
+| Language | Python 3.13 |
+| Database | PostgreSQL 18 (psycopg 3.2+) |
+| ML | XGBoost 2.1+ (GPU), scikit-learn, Optuna |
+| Explainability | Native TreeSHAP (`pred_contribs=True`) |
+| Dashboard | Streamlit 1.44+, Plotly 5.24+ |
+| Data | yfinance, pandas 2.2+, ta 0.11+ |
+| Scheduling | APScheduler 3.10+ |
+| Table Rendering | tabulate 0.9+ |
+| Deployment | Docker, Docker Compose, NFS |
+
+---
+
+## Four Production Models
+
+| Model Key | Artifact | Horizon | Hurdle |
+|-----------|----------|---------|--------|
+| `active_1w` | `xgboost_active_1w.json` | 5 days | 1.5% |
+| `conservative_1mo` | `xgboost_conservative_1mo.json` | 21 days | 3.0% |
+| `conservative_6mo` | `xgboost_conservative_6mo.json` | 126 days | 7.5% |
+| `experimental` | `xgboost_experimental.json` | 1 day | 0.5% |
+
+Each model has a threshold sidecar (`xgboost_threshold_<key>.json`) for F1-optimal binary classification.
+
+---
+
+## Database Schema (post-migration 005)
+
+```sql
+analysis_info:
+  id, ticker, date,
+  rsi, macd, macd_signal, macd_hist,
+  bb_upper, bb_middle, bb_lower,
+  prob_active_1w, prob_conservative_1mo, prob_conservative_6mo, prob_experimental,
+  features_active_1w (JSONB), features_conservative_1mo (JSONB),
+  features_conservative_6mo (JSONB), features_experimental (JSONB),
+  created_at
+  UNIQUE(ticker, date)
+```
+
+---
+
+## File Structure
+
+```
+momentum-ops/
+├── database/
+│   ├── schema.sql
+│   ├── db.py
+│   └── migrations/  (002–005)
+├── ingestion/
+│   ├── fetcher.py
+│   └── scheduler.py
+├── models/
+│   ├── features.py
+│   └── models.py
+├── model_artifacts/  (NFS mount — 4 models + threshold sidecars)
+├── dashboard/
+│   ├── app.py
+│   ├── momentum_tab.py
+│   ├── predictions_tab.py
+│   ├── ai_advisor_tab.py
+│   ├── prompt_generator.py
+│   ├── ticker_management_tab.py
+│   └── utils.py
+├── scripts/
+│   ├── train_local.py
+│   ├── build_and_upload.sh
+│   └── deploy.sh
+├── docs/architecture/
+│   └── current_state.md
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── README.md
+├── QUICKSTART.md
+└── IMPLEMENTATION.md
+```
+
+---
+
+## Deployment
+
+### Docker (Production)
+```bash
+docker-compose up -d      # Access at :8501
+```
+
+### Training (Local GPU)
+```bash
+python scripts/train_local.py --models active_1w conservative_1mo --tune
+./scripts/deploy.sh       # rsync to TrueNAS NFS
+```
+
+### Build + Push
+```bash
+./scripts/build_and_upload.sh
+```
+
+---
+
+See [QUICKSTART.md](QUICKSTART.md) for rapid deployment and [docs/architecture/current_state.md](docs/architecture/current_state.md) for design rationale.
