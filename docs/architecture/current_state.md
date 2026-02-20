@@ -1,6 +1,6 @@
 # momentum-ops — Architecture (Current State)
 
-> **Last updated:** 2026-02-20
+> **Last updated:** 2025-07-17
 > **Author:** Engineering — Principal Staff review
 > **Status:** Production
 
@@ -9,10 +9,15 @@
 ## System Overview
 
 momentum-ops is a single-container, multi-model inference system for directional
-equity probability estimation. Training is decoupled from inference: a local GPU
-workstation produces XGBoost artifacts that are hot-swapped into a remote
-production container via an NFS bridge, with zero downtime and no container
-rebuilds.
+equity probability estimation with native TreeSHAP explainability. Training is
+decoupled from inference: a local GPU workstation produces XGBoost artifacts that
+are hot-swapped into a remote production container via an NFS bridge, with zero
+downtime and no container rebuilds.
+
+The Streamlit dashboard exposes four pages: **Directional Outlook** (probability
+gauges + SHAP bar charts), **Momentum Analysis** (candlestick + RSI + MACD),
+**AI Advisor** (structured LLM prompt generator with multi-language support), and
+**Manage Tickers** (yfinance-validated ticker CRUD).
 
 ---
 
@@ -40,7 +45,8 @@ graph LR
         THR2["xgboost_threshold_conservative_1mo.json"]
         THR3["xgboost_threshold_conservative_6mo.json"]
         MOUNT --- ART1 & ART2 & ART3 & ART4
-        MOUNT --- THR1 & THR2 & THR3
+        THR4["xgboost_threshold_experimental.json"]
+        MOUNT --- THR1 & THR2 & THR3 & THR4
     end
 
     subgraph PROD["Production Node — TrueNAS SCALE · 172.27.1.45 · Tesla P4"]
@@ -57,23 +63,29 @@ graph LR
                 M3["🛡️ conservative_6mo\n(Japanese equities)"]
                 M4["🧪 experimental\n(Event Base)"]
             end
-            SCHED --> YF --> FE --> FMP --> MODELS
+            SHAP["TreeSHAP\n(pred_contribs=True)"]
+            SCHED --> YF --> FE --> FMP --> MODELS --> SHAP
         end
-        DASH["Streamlit Dashboard\n:8501"]
+        subgraph PAGES["Dashboard Pages · :8501"]
+            PRED["Directional Outlook\ngauges + SHAP charts"]
+            MOM["Momentum Analysis\ncandlestick + RSI + MACD"]
+            AIADV["AI Advisor\nprompt generator · 8 languages"]
+            TMGMT["Manage Tickers\nyfinance-validated CRUD"]
+        end
     end
 
     subgraph DB["PostgreSQL — TrueNAS"]
         direction TB
-        AI["analysis_info\n──────────────\nprob_active_1w\nprob_conservative_1mo\nprob_conservative_6mo\nprob_experimental"]
+        AI["analysis_info\n──────────────\nprob_active_1w\nprob_conservative_1mo\nprob_conservative_6mo\nprob_experimental\n──────────────\nfeatures_active_1w (JSONB)\nfeatures_conservative_1mo (JSONB)\nfeatures_conservative_6mo (JSONB)\nfeatures_experimental (JSONB)"]
         PD["price_daily"]
     end
 
     PD -- "Historical OHLCV\n(psycopg)" --> TL
     THR -- "rsync / NFS write" --> MOUNT
     MOUNT -- "Docker HostPath\n→ /app/model_weights" --> FMP
-    MODELS -- "4 × P(up)" --> AI
-    SCHED -- "Indicators + probs\n(UPSERT)" --> AI
-    AI -- "SELECT latest" --> DASH
+    SHAP -- "4 × P(up) + 4 × SHAP" --> AI
+    SCHED -- "Indicators + probs + contribs\n(UPSERT · 17 params)" --> AI
+    AI -- "SELECT latest" --> PAGES
 
     style TRAIN fill:#1a1a2e,stroke:#e94560,color:#eee
     style NFS fill:#16213e,stroke:#0f3460,color:#eee
@@ -160,7 +172,7 @@ avoids a 4× memory amplification that the previous 18-model architecture would
 have imposed. On the Tesla P4's 8 GB VRAM (shared with the host's CUDA runtime),
 this is the difference between stable operation and periodic OOM kills.
 
-### Database schema (post-migration 004)
+### Database schema (post-migration 005)
 
 ```sql
 CREATE TABLE analysis_info (
@@ -178,10 +190,19 @@ CREATE TABLE analysis_info (
     prob_conservative_1mo   REAL,
     prob_conservative_6mo   REAL,
     prob_experimental       REAL,
+    features_active_1w          JSONB,   -- TreeSHAP contributions
+    features_conservative_1mo   JSONB,
+    features_conservative_6mo   JSONB,
+    features_experimental       JSONB,
     created_at      TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(ticker, date)
 );
 ```
+
+The 4 JSONB columns (added in migration 005) store per-feature TreeSHAP
+contribution values as `{"feature_name": float, ...}` dictionaries. These are
+computed at inference time via `booster.predict(dmatrix, pred_contribs=True)` and
+rendered as horizontal bar charts in the Directional Outlook page.
 
 One row per ticker per day. The `UPSERT` (`ON CONFLICT ... DO UPDATE`) ensures
 idempotent writes — the scheduler can safely re-run without duplicating data.
@@ -242,7 +263,8 @@ model_artifacts/
 ├── xgboost_threshold_conservative_1mo.json
 ├── xgboost_conservative_6mo.json
 ├── xgboost_threshold_conservative_6mo.json
-└── xgboost_experimental.json
+├── xgboost_experimental.json
+└── xgboost_threshold_experimental.json
 ```
 
 At inference time, `DirectionPredictor._load()` reads the threshold sidecar and
@@ -276,6 +298,9 @@ empirical observation that price dispersion grows sub-linearly over time
 | `models/models.py` | `FourModelPredictor` — registry-driven lazy loader + inference |
 | `ingestion/scheduler.py` | APScheduler loop — yfinance → features → 4-model inference → DB |
 | `database/schema.sql` | DDL for `analysis_info` (4 probability columns) |
-| `database/db.py` | `insert_analysis()` — UPSERT with 13 parameters |
-| `dashboard/predictions_tab.py` | Streamlit gauge UI — 4-model selector |
+| `database/db.py` | `insert_analysis()` — UPSERT with 17 parameters (7 indicators + 4 probs + 4 JSONB + ticker/date) |
+| `dashboard/predictions_tab.py` | Directional Outlook — probability gauges, TreeSHAP bar charts, `st.pills` model selector |
+| `dashboard/ai_advisor_tab.py` | AI Advisor page — structured LLM prompt export with 8-language selector |
+| `dashboard/prompt_generator.py` | `generate_llm_advisory_prompt()` — DataFrame-based prompt builder with `pd.to_markdown()` |
+| `dashboard/ticker_management_tab.py` | Ticker CRUD — yfinance-validated add, deactivate, reactivate |
 | `docker-compose.yml` | 3-service stack (postgres, scheduler, dashboard) |
