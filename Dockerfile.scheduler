@@ -31,5 +31,5 @@ RUN useradd -m -u 1000 appuser && \
 
 USER appuser
 
-# Use shell form to ensure it's not overridden
-ENTRYPOINT /app/entrypoint.sh
+# Exec form for proper SIGTERM/SIGINT forwarding
+ENTRYPOINT ["/app/entrypoint.sh"]

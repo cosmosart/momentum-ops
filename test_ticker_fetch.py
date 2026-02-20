@@ -44,7 +44,7 @@ def test_ticker(ticker_symbol):
         print(f"   Daily prices in DB: {len(daily_prices)} rows")
         
         # Check analysis data
-        analysis = db.get_analysis_data(ticker_symbol, limit=5)
+        analysis = db.get_analysis(ticker_symbol, limit=5)
         print(f"   Analysis records in DB: {len(analysis)} rows")
         
         db.close()

@@ -27,8 +27,8 @@ ALTER TABLE analysis_info DROP COLUMN IF EXISTS prob_experimental;
 -- Old per-strategy × per-horizon matrix (replaced by four targeted models)
 ALTER TABLE analysis_info DROP COLUMN IF EXISTS prob_conservative_1d;
 ALTER TABLE analysis_info DROP COLUMN IF EXISTS prob_conservative_1w;
-ALTER TABLE analysis_info DROP COLUMN IF EXISTS prob_conservative_1mo;  -- kept as targeted model column
--- NOTE: prob_conservative_1mo and prob_conservative_6mo are the NEW columns;
+-- NOTE: prob_conservative_1mo is a NEW targeted-model column (migration 003) — do NOT drop.
+-- NOTE: prob_conservative_6mo is also a NEW targeted-model column — do NOT drop.
 --       the ones below are the OLD ones that may exist from migration 003 (original).
 --       IF NOT EXISTS / DROP IF EXISTS makes this idempotent.
 ALTER TABLE analysis_info DROP COLUMN IF EXISTS prob_conservative_1y;
