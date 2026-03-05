@@ -1,15 +1,25 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# docker-compose.yml — momentum-ops production stack (Prefect orchestration)
+# docker-compose.yml — momentum-ops LOCAL DEVELOPMENT (all-in-one)
+#
+# Runs the complete stack on a single machine for development and testing.
+# For production, use the per-host compose files in infrastructure/deploy/:
+#
+#   db-server        → docker-compose.db.yml
+#   prefect-server   → docker-compose.prefect.yml
+#   dashboard-server → docker-compose.dashboard.yml
+#   ml-server        → docker-compose.ml.yml
 #
 # Services:
-#   postgres   — PostgreSQL 18 with baseline DDL
-#   worker     — Prefect ingestion worker (replaces legacy APScheduler)
+#   postgres   — PostgreSQL 18 with baseline DDL (app data)
+#   prefect-db — PostgreSQL 16 for Prefect server metadata
+#   prefect    — Prefect 3 API server + UI (:4200)
+#   worker     — Prefect ingestion worker
 #   dashboard  — Streamlit multipage dashboard
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
 
-  # ── PostgreSQL ──────────────────────────────────────────────────────────
+  # ── App PostgreSQL ──────────────────────────────────────────────────────
   postgres:
     image: postgres:18-alpine
     container_name: momentum-postgres
@@ -31,6 +41,50 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # ── Prefect Metadata PostgreSQL ─────────────────────────────────────────
+  prefect-db:
+    image: postgres:16-alpine
+    container_name: momentum-prefect-db
+    environment:
+      POSTGRES_DB: prefect
+      POSTGRES_USER: prefect
+      POSTGRES_PASSWORD: ${PREFECT_DB_PASSWORD:-prefect_password}
+    volumes:
+      - prefect_db_data:/var/lib/postgresql/data
+    networks:
+      - momentum-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prefect"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Prefect Server (API + UI) ──────────────────────────────────────────
+  prefect:
+    image: prefecthq/prefect:3-latest
+    container_name: momentum-prefect
+    entrypoint: ["prefect", "server", "start", "--host", "0.0.0.0"]
+    environment:
+      PREFECT_SERVER_DATABASE_CONNECTION_URL: "postgresql+asyncpg://prefect:${PREFECT_DB_PASSWORD:-prefect_password}@prefect-db:5432/prefect"
+      PREFECT_API_URL: "http://prefect:4200/api"
+      PREFECT_SERVER_API_HOST: "0.0.0.0"
+      PREFECT_SERVER_API_PORT: "4200"
+    ports:
+      - "4200:4200"
+    depends_on:
+      prefect-db:
+        condition: service_healthy
+    networks:
+      - momentum-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:4200/api/health').raise_for_status()"]
+      interval: 15s
+      timeout: 10s
+      start_period: 20s
+      retries: 5
+    restart: unless-stopped
+
   # ── Prefect Ingestion Worker ────────────────────────────────────────────
   worker:
     build:
@@ -49,6 +103,8 @@ services:
       PREFECT_API_URL: ${PREFECT_API_URL:-http://prefect:4200/api}
     depends_on:
       postgres:
+        condition: service_healthy
+      prefect:
         condition: service_healthy
     networks:
       - momentum-network
@@ -92,6 +148,8 @@ networks:
 
 volumes:
   postgres_data:
+    driver: local
+  prefect_db_data:
     driver: local
   model_artifacts:
     driver: local

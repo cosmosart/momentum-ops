@@ -1,0 +1,51 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.ml.yml — ML operations server (manual)
+#
+# Host: ml-server
+# Ports: none (interactive / ad-hoc runs only)
+#
+# Requires: db-server reachable at DB_HOST:DB_PORT
+#
+# Usage:
+#   # Train all models:
+#   docker compose -f docker-compose.ml.yml --env-file .env run --rm ml \
+#     python scripts/train_local.py
+#
+#   # Train specific model with Optuna tuning:
+#   docker compose -f docker-compose.ml.yml --env-file .env run --rm ml \
+#     python scripts/train_local.py --models active_1w --tune --tune-trials 200
+#
+#   # Backfill history:
+#   docker compose -f docker-compose.ml.yml --env-file .env run --rm ml \
+#     python scripts/backfill_history.py
+#
+#   # Interactive shell:
+#   docker compose -f docker-compose.ml.yml --env-file .env run --rm ml bash
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  ml:
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/Dockerfile.ml
+    container_name: momentum-ml
+    volumes:
+      # Mount model artifacts: trained models are written here and can be
+      # copied/synced to prefect-server and dashboard-server afterward.
+      - ${ML_MODEL_ARTIFACTS_PATH:-./model_artifacts}:/opt/momentum-ops/model_artifacts
+    environment:
+      DB_HOST: ${DB_HOST:?Set DB_HOST to db-server IP}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-momentum_db}
+      DB_USER: ${DB_USER:-momentum_user}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    # GPU passthrough — uncomment if host has NVIDIA Container Toolkit:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    stdin_open: true
+    tty: true

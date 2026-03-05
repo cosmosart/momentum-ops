@@ -1,0 +1,44 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.dashboard.yml — Streamlit dashboard server
+#
+# Host: dashboard-server
+# Ports: 8501 (Streamlit)
+#
+# Requires: db-server reachable at DB_HOST:DB_PORT
+#
+# Usage:
+#   docker compose -f docker-compose.dashboard.yml --env-file .env up -d
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  dashboard:
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/Dockerfile.dashboard
+    container_name: momentum-dashboard
+    ports:
+      - "8501:8501"
+    volumes:
+      - model_artifacts:/opt/momentum-ops/model_artifacts
+    environment:
+      DB_HOST: ${DB_HOST:?Set DB_HOST to db-server IP}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-momentum_db}
+      DB_USER: ${DB_USER:-momentum_user}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      DEFAULT_TICKER: ${DEFAULT_TICKER:-AAPL}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  model_artifacts:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${MODEL_ARTIFACTS_HOST_PATH:?Set MODEL_ARTIFACTS_HOST_PATH in .env}

@@ -1,0 +1,95 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.prefect.yml — Prefect ingestion server
+#
+# Host: prefect-server
+# Services:
+#   prefect-db — PostgreSQL 16 for Prefect server metadata (port 5433)
+#   prefect    — Prefect 3 API server + UI (port 4200)
+#   worker     — Prefect ingestion worker (connects to external app DB)
+#
+# Ports: 4200 (Prefect UI/API), 5433 (Prefect metadata DB — internal only)
+#
+# Usage:
+#   docker compose -f docker-compose.prefect.yml --env-file .env up -d
+#
+# After first boot:
+#   PREFECT_API_URL=http://localhost:4200/api ./scripts/bootstrap_prefect.sh
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Prefect Metadata PostgreSQL ─────────────────────────────────────────
+  prefect-db:
+    image: postgres:16-alpine
+    container_name: momentum-prefect-db
+    environment:
+      POSTGRES_DB: prefect
+      POSTGRES_USER: prefect
+      POSTGRES_PASSWORD: ${PREFECT_DB_PASSWORD:?Set PREFECT_DB_PASSWORD in .env}
+    volumes:
+      - prefect_db_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prefect"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Prefect Server (API + UI) ──────────────────────────────────────────
+  prefect:
+    image: prefecthq/prefect:3-latest
+    container_name: momentum-prefect
+    entrypoint: ["prefect", "server", "start", "--host", "0.0.0.0"]
+    environment:
+      PREFECT_SERVER_DATABASE_CONNECTION_URL: >-
+        postgresql+asyncpg://prefect:${PREFECT_DB_PASSWORD:?Set PREFECT_DB_PASSWORD}@prefect-db:5432/prefect
+      PREFECT_API_URL: "http://0.0.0.0:4200/api"
+      PREFECT_SERVER_API_HOST: "0.0.0.0"
+      PREFECT_SERVER_API_PORT: "4200"
+    ports:
+      - "4200:4200"
+    depends_on:
+      prefect-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:4200/api/health').raise_for_status()"]
+      interval: 15s
+      timeout: 10s
+      start_period: 20s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Prefect Ingestion Worker ────────────────────────────────────────────
+  worker:
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/Dockerfile.worker
+    container_name: momentum-worker
+    volumes:
+      - model_artifacts:/opt/momentum-ops/model_artifacts
+    environment:
+      # App DB — remote db-server
+      DB_HOST: ${DB_HOST:?Set DB_HOST to db-server IP}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-momentum_db}
+      DB_USER: ${DB_USER:-momentum_user}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      DEFAULT_TICKER: ${DEFAULT_TICKER:-AAPL}
+      # Prefect API — local prefect service
+      PREFECT_API_URL: http://prefect:4200/api
+    depends_on:
+      prefect:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  prefect_db_data:
+    driver: local
+  model_artifacts:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${MODEL_ARTIFACTS_HOST_PATH:?Set MODEL_ARTIFACTS_HOST_PATH in .env}
