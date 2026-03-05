@@ -82,7 +82,7 @@ if $MODELS_ONLY; then
     fi
     rsync -avz --progress model_artifacts/xgboost_*.json \
         "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_MODEL_DIR}/"
-    ok "Model artifacts uploaded. Scheduler will pick them up on next cycle."
+    ok "Model artifacts uploaded. Prefect worker will pick them up on next flow run."
     exit 0
 fi
 
@@ -93,8 +93,9 @@ log "Validating project..."
 
 python -m py_compile models/models.py
 python -m py_compile models/features.py
-python -m py_compile ingestion/scheduler.py
-python -m py_compile run_scheduler.py
+python -m py_compile ingestion/flows.py
+python -m py_compile shared/config.py
+python -m py_compile shared/database.py
 python -m py_compile dashboard/app.py
 ok "Python compilation checks passed"
 
@@ -110,16 +111,16 @@ if ! $SKIP_BUILD; then
     docker build \
         -t "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" \
         -t "${REGISTRY}/${IMAGE_NAME}:latest" \
-        -f Dockerfile \
+        -f infrastructure/docker/Dockerfile.dashboard \
         .
     ok "Dashboard image built: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
-    log "Building scheduler image (${REGISTRY}/${IMAGE_NAME}:scheduler)..."
+    log "Building worker image (${REGISTRY}/${IMAGE_NAME}:worker)..."
     docker build \
-        -t "${REGISTRY}/${IMAGE_NAME}:scheduler" \
-        -f Dockerfile.scheduler \
+        -t "${REGISTRY}/${IMAGE_NAME}:worker" \
+        -f infrastructure/docker/Dockerfile.worker \
         .
-    ok "Scheduler image built: ${REGISTRY}/${IMAGE_NAME}:scheduler"
+    ok "Worker image built: ${REGISTRY}/${IMAGE_NAME}:worker"
 
     # ---------------------------------------------------------------------------
     # Step 3: Push to Docker Hub
@@ -127,7 +128,7 @@ if ! $SKIP_BUILD; then
     log "Pushing images to Docker Hub..."
     docker push "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
     docker push "${REGISTRY}/${IMAGE_NAME}:latest"
-    docker push "${REGISTRY}/${IMAGE_NAME}:scheduler"
+    docker push "${REGISTRY}/${IMAGE_NAME}:worker"
     ok "All images pushed to Docker Hub"
 else
     ok "Skipping build — will pull existing images on remote"

@@ -1,6 +1,15 @@
-version: '3.8'
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.yml — momentum-ops production stack (Prefect orchestration)
+#
+# Services:
+#   postgres   — PostgreSQL 18 with baseline DDL
+#   worker     — Prefect ingestion worker (replaces legacy APScheduler)
+#   dashboard  — Streamlit multipage dashboard
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────
   postgres:
     image: postgres:18-alpine
     container_name: momentum-postgres
@@ -10,7 +19,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-momentum_password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      - ./infrastructure/ddl/baseline.sql:/docker-entrypoint-initdb.d/01_baseline.sql
     ports:
       - "5432:5432"
     networks:
@@ -22,12 +31,14 @@ services:
       retries: 5
     restart: unless-stopped
 
-  scheduler:
-    image: cosmosart/momentum-ops:scheduler
-    container_name: momentum-scheduler
-    command: python run_scheduler.py
+  # ── Prefect Ingestion Worker ────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.worker
+    container_name: momentum-worker
     volumes:
-      - model_artifacts:/app/model_artifacts
+      - model_artifacts:/opt/momentum-ops/model_artifacts
     environment:
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
@@ -35,8 +46,7 @@ services:
       DB_USER: ${DB_USER:-momentum_user}
       DB_PASSWORD: ${DB_PASSWORD:-momentum_password}
       DEFAULT_TICKER: ${DEFAULT_TICKER:-AAPL}
-      UPDATE_INTERVAL_MINUTES: ${UPDATE_INTERVAL_MINUTES:-5}
-      SCHEDULER_TIMEZONE: ${SCHEDULER_TIMEZONE:-UTC}
+      PREFECT_API_URL: ${PREFECT_API_URL:-http://prefect:4200/api}
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,13 +54,16 @@ services:
       - momentum-network
     restart: unless-stopped
 
+  # ── Streamlit Dashboard ─────────────────────────────────────────────────
   dashboard:
-    image: cosmosart/momentum-ops:latest
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.dashboard
     container_name: momentum-dashboard
     ports:
       - "8501:8501"
     volumes:
-      - model_artifacts:/app/model_artifacts
+      - model_artifacts:/opt/momentum-ops/model_artifacts
     environment:
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
@@ -61,7 +74,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      scheduler:
+      worker:
         condition: service_started
     networks:
       - momentum-network

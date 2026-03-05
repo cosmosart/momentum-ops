@@ -53,7 +53,7 @@ graph LR
         direction TB
         subgraph DOCKER["Docker Container · cosmosart/momentum-ops"]
             direction TB
-            SCHED["scheduler.py\n(APScheduler · 5 min cycle)"]
+            SCHED["ingestion/flows.py\n(Prefect · krx_realtime + daily_batch)"]
             YF["yfinance\n(live OHLCV)"]
             FE["features.py\nengineer_features()\n— 15 features, ONE pass"]
             FMP["FourModelPredictor\n(models.py)"]
@@ -105,7 +105,7 @@ machines:
 | Role | Hardware | Location | GPU | Workload |
 |------|----------|----------|-----|----------|
 | **Training** | HP Z440 | Local Workstation | NVIDIA RTX 3070 (8 GB VRAM) | Optuna HPO, XGBoost `hist` training, threshold calibration |
-| **Inference** | TrueNAS SCALE | 172.27.1.45 | NVIDIA Tesla P4 (8 GB VRAM) | 4-model `predict_proba` on every scheduler tick |
+| **Inference** | TrueNAS SCALE | 172.27.1.45 | NVIDIA Tesla P4 (8 GB VRAM) | 4-model `predict_proba` on every Prefect flow run |
 
 ### Why separate them
 
@@ -117,7 +117,8 @@ the same GPU would cause unpredictable OOM evictions and inference latency spike
 
 **Duty-cycle mismatch.** Training is a batch job launched ad-hoc (operator runs
 `python scripts/train_local.py --tune --strategy active --horizons 1w`). Inference
-is a soft-realtime loop (APScheduler fires `run_ingestion_cycle` every 5 minutes).
+is a soft-realtime loop (Prefect fires `krx_realtime_flow` every 5 minutes during
+KRX trading hours and `daily_batch_flow` at 18:00 JST).
 Co-locating them would require complex mutex coordination or GPU context switching
 that adds engineering cost for zero accuracy improvement.
 
@@ -144,7 +145,7 @@ redeployment.
 
 ### Why a single feature pass matters
 
-Every ingestion cycle, `scheduler.py` calls `engineer_features()` **exactly
+Every ingestion cycle, `flows.py` calls `engineer_features()` **exactly
 once** per ticker. This function computes all 15 features from the raw OHLCV
 DataFrame:
 
@@ -205,7 +206,7 @@ computed at inference time via `booster.predict(dmatrix, pred_contribs=True)` an
 rendered as horizontal bar charts in the Directional Outlook page.
 
 One row per ticker per day. The `UPSERT` (`ON CONFLICT ... DO UPDATE`) ensures
-idempotent writes — the scheduler can safely re-run without duplicating data.
+idempotent writes — the Prefect flow can safely re-run without duplicating data.
 
 ---
 
@@ -296,11 +297,11 @@ empirical observation that price dispersion grows sub-linearly over time
 | `scripts/train_local.py` | GPU training script — Optuna HPO, XGBoost, threshold export |
 | `models/features.py` | Single source of truth for 15 engineered features |
 | `models/models.py` | `FourModelPredictor` — registry-driven lazy loader + inference |
-| `ingestion/scheduler.py` | APScheduler loop — yfinance → features → 4-model inference → DB |
+| `ingestion/flows.py` | Prefect flows — yfinance → features → 4-model inference → DB |
 | `database/schema.sql` | DDL for `analysis_info` (4 probability columns) |
 | `database/db.py` | `insert_analysis()` — UPSERT with 17 parameters (7 indicators + 4 probs + 4 JSONB + ticker/date) |
 | `dashboard/predictions_tab.py` | Directional Outlook — probability gauges, TreeSHAP bar charts, `st.pills` model selector |
 | `dashboard/ai_advisor_tab.py` | AI Advisor page — structured LLM prompt export with 8-language selector |
 | `dashboard/prompt_generator.py` | `generate_llm_advisory_prompt()` — DataFrame-based prompt builder with `pd.to_markdown()` |
 | `dashboard/ticker_management_tab.py` | Ticker CRUD — yfinance-validated add, deactivate, reactivate |
-| `docker-compose.yml` | 3-service stack (postgres, scheduler, dashboard) |
+| `docker-compose.yml` | 3-service stack (postgres, worker, dashboard) |

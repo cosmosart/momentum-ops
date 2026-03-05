@@ -135,7 +135,7 @@ def render_ai_advisor_tab(ticker: str):
         if not analysis_data:
             st.warning(
                 "No analysis data available yet. "
-                "The scheduler may not have run."
+                "The Prefect ingestion flow may not have run."
             )
             return
 

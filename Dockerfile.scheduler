@@ -1,35 +1,55 @@
-FROM python:3.13-slim
+# ─────────────────────────────────────────────────────────────────────────────
+# Dockerfile.scheduler — DEPRECATED
+#
+# This Dockerfile previously ran the APScheduler-based ingestion loop.
+# It has been replaced by infrastructure/docker/Dockerfile.worker, which
+# installs only the [ingestion] dependency group via uv and starts a
+# Prefect worker polling from proxmox-local-pool.
+#
+# This file is retained for backward compatibility during migration.
+# New deployments should use the docker-compose.yml at the repo root or
+# infrastructure/docker-compose.yml which references Dockerfile.worker.
+# ─────────────────────────────────────────────────────────────────────────────
+
+FROM python:3.12-slim
 
 # Prevent Python from buffering stdout/stderr
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
-# Set working directory
-WORKDIR /app
+WORKDIR /opt/momentum-ops
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
-    postgresql-client \
+    libpq-dev \
     curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY requirements.txt .
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies (ingestion group only)
+COPY pyproject.toml ./
+RUN uv pip install --system ".[ingestion]"
 
 # Copy application code
-COPY . .
+COPY shared/ shared/
+COPY ingestion/ ingestion/
+COPY models/ models/
+COPY model_artifacts/ model_artifacts/
+COPY prefect.yaml ./
+COPY entrypoint.sh ./
 
 # Make entrypoint executable
 RUN chmod +x entrypoint.sh
 
 # Create a non-root user
 RUN useradd -m -u 1000 appuser && \
-    chown -R appuser:appuser /app
+    chown -R appuser:appuser /opt/momentum-ops
 
 USER appuser
 
 # Exec form for proper SIGTERM/SIGINT forwarding
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/opt/momentum-ops/entrypoint.sh"]

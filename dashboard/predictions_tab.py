@@ -194,7 +194,7 @@ def render_predictions_tab(ticker: str):
 
         if not daily_prices:
             st.warning(f"No data available for {ticker}. Data ingestion may still be in progress.")
-            st.info("Please wait for the scheduler to fetch data, or run the ingestion manually.")
+            st.info("Please wait for the Prefect ingestion flow to complete, or trigger a run manually.")
             return
 
         # Current price
@@ -259,7 +259,7 @@ def render_predictions_tab(ticker: str):
             else:
                 st.warning(
                     f"No probability available for **{mmeta['label']}**. "
-                    "The model may not be deployed yet or the scheduler hasn't run."
+                    "The model may not be deployed yet or the ingestion flow hasn't run."
                 )
 
             st.divider()
@@ -322,7 +322,7 @@ def render_predictions_tab(ticker: str):
             else:
                 st.info(
                     "Feature contributions not yet available for this model. "
-                    "They will appear after the next scheduler cycle."
+                    "They will appear after the next Prefect flow run."
                 )
 
             st.divider()
@@ -331,7 +331,7 @@ def render_predictions_tab(ticker: str):
             # Current signal values
             # ------------------------------------------------------------------
             st.subheader("Current Signal Values")
-            st.caption("Latest indicator snapshots stored by the scheduler.")
+            st.caption("Latest indicator snapshots stored by the ingestion flow.")
 
             rsi = _safe_float(analysis.get("rsi"))
             macd_val = _safe_float(analysis.get("macd"))
@@ -418,7 +418,7 @@ def render_predictions_tab(ticker: str):
             else:
                 st.warning(
                     "No strategy model probabilities available yet. "
-                    "Make sure XGBoost models are deployed and the scheduler has run."
+                    "Make sure XGBoost models are deployed and the ingestion flow has run."
                 )
 
             st.divider()

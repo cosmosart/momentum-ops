@@ -2,10 +2,10 @@
 
 ## Overview
 
-Production-grade market analysis system: automated ingestion, four targeted
-XGBoost directional-probability models with TreeSHAP explainability, an AI
-Advisory prompt generator, and a Streamlit dashboard — deployed as a single
-Docker container on TrueNAS SCALE with decoupled GPU training via NFS.
+Production-grade market analysis system: automated ingestion via Prefect flows,
+four targeted XGBoost directional-probability models with TreeSHAP explainability,
+an AI Advisory prompt generator, and a Streamlit multipage dashboard — deployed as
+Docker containers on Proxmox / TrueNAS SCALE with decoupled GPU training via NFS.
 
 ---
 
@@ -13,20 +13,24 @@ Docker container on TrueNAS SCALE with decoupled GPU training via NFS.
 
 ### 1. Database Layer (PostgreSQL 18)
 
-- **schema.sql**: 4 tables (`price_realtime`, `price_daily`, `analysis_info`, `tickers`) with proper indexing
-- **db.py**: `Database` class — psycopg 3 with `dict_row`, UPSERT queries (17 parameters), connection management
-- **Migrations**:
-  - `002_add_multi_horizon_columns.sql` — initial multi-horizon columns
-  - `003_add_multi_strategy_columns.sql` — 4 targeted prob columns
-  - `004_drop_dead_columns.sql` — removes 20 legacy columns
-  - `005_add_feature_contributions.sql` — 4 JSONB columns for TreeSHAP
+- **infrastructure/ddl/baseline.sql**: Unified idempotent DDL — 5 tables (`tickers`, `price_realtime`, `price_daily`, `fundamental_daily`, `analysis_info`) with proper indexing
+- **shared/database.py**: `psycopg_pool.ConnectionPool` — thread-safe connection management, `get_connection()` context manager, `check_health()` liveness probe
+- **shared/config.py**: Pydantic `BaseSettings` — centralised DB_URL, API keys, and application config
+- **Legacy migrations** retained in `database/migrations/` for history
 
-### 2. Data Ingestion
+### 2. Data Ingestion (Prefect)
 
-- **fetcher.py**: yfinance integration — real-time + historical OHLCV
-- **scheduler.py**: APScheduler `BackgroundScheduler` (5-min cycle)
-  - yfinance fetch → `engineer_features()` (single pass) → `FourModelPredictor.predict_from_ohlcv()` → TreeSHAP contributions → UPSERT to DB
-  - Serialises JSONB contributions via `_contrib_json()` helper
+- **ingestion/fetcher.py**: yfinance integration — real-time + historical OHLCV
+- **ingestion/flows.py**: Prefect `@flow` / `@task` orchestration (replaces APScheduler)
+  - `fetch_active_tickers` — queries `tickers` table for active symbols
+  - `fetch_yfinance_daily` / `fetch_yfinance_realtime` — data retrieval with retries + caching
+  - `upsert_daily_prices` / `upsert_realtime_price` — batch DB writes
+  - `backfill_if_needed` — auto-backfill sparse tickers
+  - `run_inference_and_persist` — feature engineering → 4-model XGBoost → TreeSHAP → UPSERT
+  - `krx_realtime_flow` — 5-min cycle during KRX hours (M–F 09:00–15:30 JST)
+  - `daily_batch_flow` — once daily at 18:00 JST
+- **prefect.yaml**: Two deployments targeting `proxmox-local-pool` work pool
+- **ingestion/scheduler.py**: Legacy APScheduler module — retained for reference, no longer active
 
 ### 3. Machine Learning
 
@@ -34,41 +38,31 @@ Docker container on TrueNAS SCALE with decoupled GPU training via NFS.
 - **models.py**: `DirectionPredictor` (load, predict, TreeSHAP via `booster.predict(dmatrix, pred_contribs=True)`), `FourModelPredictor` (registry-driven lazy loader), `MODEL_REGISTRY` (4 entries)
   - `predict_from_ohlcv()` returns `tuple[Dict[probs], Dict[contribs]]`
 - **train_local.py**: Optuna Bayesian HPO, `TimeSeriesSplit` CV, PR-AUC objective, GPU XGBoost (`tree_method=hist, device=cuda`)
-  - `MODEL_DEFAULTS` dict (experimental overfit profile: max_depth=12, n_estimators=2000, no regularization)
-  - `TRAINING_PLAN` maps registry keys to horizons
   - F1-optimal threshold exported as sidecar JSON
-  - `_derive_threshold_filename()` matches `MODEL_REGISTRY` exactly
 
-### 4. Streamlit Dashboard
+### 4. Streamlit Dashboard (Native Multipage)
 
-- **app.py**: Sidebar navigation (`st.pills`), ticker selector with company names, DB status indicator
-- **predictions_tab.py** (Directional Outlook):
-  - Model selector (`st.pills`) — 4 models
-  - Plotly probability gauge + regime classification
-  - TreeSHAP horizontal bar chart (per-model, from JSONB)
-  - Current Signal Values (RSI, MACD, Bollinger)
-  - All Models Overview (mini gauges)
-  - Signal Interpretation expander
-- **momentum_tab.py**: Candlestick chart, RSI with zones, MACD with histogram
-- **ai_advisor_tab.py**: AI Advisory prompt export
-  - Language selector (8 languages: English, Korean, Japanese, Chinese, Spanish, French, German, Portuguese)
-  - Generates structured Markdown prompt via `prompt_generator.py`
-  - `st.code(..., language="markdown")` with native copy-to-clipboard
-- **prompt_generator.py**: `generate_llm_advisory_prompt()` — 4 sections (Request with web search mandate, Quantitative Data table, XGBoost + SHAP tables, Strategic Context), language instruction appended when non-English
-- **ticker_management_tab.py**: Add (yfinance-validated), deactivate, reactivate tickers
+- **app.py**: Entry point — shared sidebar (ticker selector, DB status indicator via `check_health()`), Home page
+- **pages/**: Streamlit native multipage routing (replaces `st.pills` navigation)
+  - `1_directional_outlook.py` → `predictions_tab.py`
+  - `2_momentum_analysis.py` → `momentum_tab.py`
+  - `3_ai_advisor.py` → `ai_advisor_tab.py`
+  - `4_manage_tickers.py` → `ticker_management_tab.py`
+- **prompt_generator.py**: `generate_llm_advisory_prompt()` — Markdown prompt builder with portfolio mandates
 - **utils.py**: Currency formatting (USD, JPY, KRW, INR, HKD)
 
 ### 5. Infrastructure
 
-- **Dockerfile**: Python 3.13 slim, non-root user, health checks
-- **docker-compose.yml**: 3-service stack (postgres:18-alpine, scheduler, dashboard), NFS bind-mount for model artifacts
-- **build_and_upload.sh**: Docker build + push to `cosmosart/momentum-ops` + rsync
+- **infrastructure/docker/Dockerfile.worker**: Python 3.12 slim + uv — installs `[ingestion]` group, starts Prefect worker
+- **infrastructure/docker/Dockerfile.dashboard**: Python 3.12 slim + uv — installs `[dashboard]` group, starts Streamlit
+- **infrastructure/docker-compose.yml**: 3-service stack (postgres, worker, dashboard), NFS bind-mount for model artifacts
+- **pyproject.toml**: PEP 621 with optional dependency groups (`ingestion`, `ml`, `dashboard`, `dev`), managed by uv
 - **deploy.sh**: rsync model artifacts to TrueNAS NFS share
 
 ### 6. Documentation
 
 - **README.md**: Comprehensive setup, architecture, schema, training instructions
-- **QUICKSTART.md**: Docker quick start, dashboard pages, troubleshooting
+- **QUICKSTART.md**: Docker quick start, Prefect deployments, dashboard pages, troubleshooting
 - **IMPLEMENTATION.md**: This file
 - **docs/architecture/current_state.md**: Mermaid diagram, decoupled compute rationale, multi-model inference, thresholding
 
@@ -78,15 +72,17 @@ Docker container on TrueNAS SCALE with decoupled GPU training via NFS.
 
 | Component | Technology |
 |-----------|-----------|
-| Language | Python 3.13 |
-| Database | PostgreSQL 18 (psycopg 3.2+) |
+| Language | Python 3.12 |
+| Package Manager | uv (Astral) with PEP 621 `pyproject.toml` |
+| Database | PostgreSQL 18 (psycopg 3.2+ / psycopg_pool) |
+| Configuration | Pydantic Settings v2 |
+| Orchestration | Prefect 3 |
 | ML | XGBoost 2.1+ (GPU), scikit-learn, Optuna |
 | Explainability | Native TreeSHAP (`pred_contribs=True`) |
-| Dashboard | Streamlit 1.44+, Plotly 5.24+ |
+| Dashboard | Streamlit 1.44+ (native multipage), Plotly 5.24+ |
 | Data | yfinance, pandas 2.2+, ta 0.11+ |
-| Scheduling | APScheduler 3.10+ |
 | Table Rendering | tabulate 0.9+ |
-| Deployment | Docker, Docker Compose, NFS |
+| Deployment | Docker Compose, Proxmox, NFS |
 
 ---
 
@@ -123,19 +119,32 @@ analysis_info:
 
 ```
 momentum-ops/
-├── database/
-│   ├── schema.sql
-│   ├── db.py
-│   └── migrations/  (002–005)
+├── pyproject.toml              # PEP 621 — uv-managed deps
+├── prefect.yaml                # Prefect deployment config
+├── shared/
+│   ├── config.py               # Pydantic BaseSettings
+│   └── database.py             # psycopg_pool ConnectionPool
+├── infrastructure/
+│   ├── docker/
+│   │   ├── Dockerfile.worker
+│   │   └── Dockerfile.dashboard
+│   ├── ddl/
+│   │   └── baseline.sql
+│   └── docker-compose.yml
 ├── ingestion/
 │   ├── fetcher.py
-│   └── scheduler.py
+│   └── flows.py                # Prefect @flow/@task
 ├── models/
 │   ├── features.py
 │   └── models.py
-├── model_artifacts/  (NFS mount — 4 models + threshold sidecars)
+├── model_artifacts/            # NFS mount — 4 models + threshold sidecars
 ├── dashboard/
 │   ├── app.py
+│   ├── pages/
+│   │   ├── 1_directional_outlook.py
+│   │   ├── 2_momentum_analysis.py
+│   │   ├── 3_ai_advisor.py
+│   │   └── 4_manage_tickers.py
 │   ├── momentum_tab.py
 │   ├── predictions_tab.py
 │   ├── ai_advisor_tab.py
@@ -144,13 +153,14 @@ momentum-ops/
 │   └── utils.py
 ├── scripts/
 │   ├── train_local.py
-│   ├── build_and_upload.sh
 │   └── deploy.sh
+├── tests/
+│   └── test_shared.py
 ├── docs/architecture/
 │   └── current_state.md
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
+├── Dockerfile                  # Root-level convenience (dashboard)
+├── Dockerfile.scheduler        # Deprecated — see Dockerfile.worker
+├── docker-compose.yml          # Root-level (points to infra DDL)
 ├── README.md
 ├── QUICKSTART.md
 └── IMPLEMENTATION.md
@@ -162,18 +172,20 @@ momentum-ops/
 
 ### Docker (Production)
 ```bash
-docker-compose up -d      # Access at :8501
+docker compose -f infrastructure/docker-compose.yml up -d   # Access at :8501
+```
+
+### Prefect Flows
+```bash
+prefect deploy --all                # Register deployments
+prefect worker start -p proxmox-local-pool   # Start worker
 ```
 
 ### Training (Local GPU)
 ```bash
+uv pip install -e ".[ml]"
 python scripts/train_local.py --models active_1w conservative_1mo --tune
-./scripts/deploy.sh       # rsync to TrueNAS NFS
-```
-
-### Build + Push
-```bash
-./scripts/build_and_upload.sh
+./scripts/deploy.sh               # rsync to TrueNAS NFS
 ```
 
 ---

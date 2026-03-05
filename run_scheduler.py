@@ -1,73 +1,44 @@
 """
-Run the data ingestion scheduler.
+Legacy scheduler entry point — DEPRECATED.
+
+This file previously launched the APScheduler-based DataScheduler.
+All orchestration has been migrated to Prefect flows in ``ingestion/flows.py``.
+
+To start the new orchestration:
+    prefect deploy --all
+    prefect worker start -p proxmox-local-pool
+
+Or run a one-shot ingestion:
+    python -m ingestion.flows
+
+This shim remains so that existing scripts or CI that invoke
+``python run_scheduler.py`` receive a clear migration message.
 """
 
 import logging
-import signal
-import time
 import sys
-from ingestion.scheduler import DataScheduler
 
-# Force unbuffered output for Docker
-sys.stdout.reconfigure(line_buffering=True)
-sys.stderr.reconfigure(line_buffering=True)
-
-# Configure logging with immediate flush
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
-
-# Force flush after each log
-logging.getLogger().handlers[0].flush = lambda: sys.stdout.flush()
 
 logger = logging.getLogger(__name__)
 
-def main():
-    """Main function to run the scheduler."""
-    try:
-        logger.info("Starting scheduler application...")
-        sys.stdout.flush()
-        
-        # Create and start scheduler
-        scheduler = DataScheduler()
-        
-        # Set up signal handlers
-        def handle_shutdown(signum, frame):
-            """Handle termination signals by stopping the scheduler and exiting."""
-            logger.info(f"Shutdown signal {signum} received, stopping scheduler...")
-            sys.stdout.flush()
-            scheduler.stop()
-            sys.exit(0)
-        
-        signal.signal(signal.SIGTERM, handle_shutdown)
-        signal.signal(signal.SIGINT, handle_shutdown)
-        
-        # Start the scheduler
-        logger.info("Initializing scheduler...")
-        sys.stdout.flush()
-        scheduler.start()
-        
-        logger.info("Scheduler is running. Press Ctrl+C to stop.")
-        sys.stdout.flush()
-        
-        # Keep the main thread alive
-        while True:
-            time.sleep(1)
-            
-    except KeyboardInterrupt:
-        logger.info("Keyboard interrupt received, stopping scheduler...")
-        sys.stdout.flush()
-        scheduler.stop()
-        sys.exit(0)
-    except Exception as e:
-        logger.error(f"Fatal error in scheduler: {e}", exc_info=True)
-        sys.stdout.flush()
-        sys.stderr.flush()
-        sys.exit(1)
+
+def main() -> None:
+    """Print migration notice and run a one-shot daily batch flow."""
+    logger.warning(
+        "run_scheduler.py is DEPRECATED. "
+        "Orchestration has moved to Prefect — see ingestion/flows.py and prefect.yaml."
+    )
+    logger.info("Running one-shot daily_batch_flow for backward compatibility...")
+
+    from ingestion.flows import daily_batch_flow  # noqa: WPS433 (late import OK)
+
+    daily_batch_flow()
+
 
 if __name__ == "__main__":
     main()
