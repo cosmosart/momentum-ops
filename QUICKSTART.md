@@ -13,15 +13,15 @@
 git clone https://github.com/cosmosart/momentum-ops.git
 cd momentum-ops
 cp .env.example .env          # edit DEFAULT_TICKER, MODEL_ARTIFACTS_HOST_PATH, etc.
-docker compose -f infrastructure/docker-compose.yml up -d
+docker compose up -d
 ```
 
 Open **http://localhost:8501** — the Home page will load immediately.
 Prefect flows begin executing as soon as the worker container starts.
 
 ```bash
-docker compose -f infrastructure/docker-compose.yml logs -f worker     # watch ingestion logs
-docker compose -f infrastructure/docker-compose.yml down               # stop
+docker compose logs -f worker     # watch ingestion logs
+docker compose down               # stop
 ```
 
 ---
@@ -133,7 +133,7 @@ PREFECT_API_URL=http://prefect:4200/api
 MODEL_ARTIFACTS_HOST_PATH=/mnt/data/model_artifacts
 ```
 
-After changes: `docker compose -f infrastructure/docker-compose.yml down && docker compose -f infrastructure/docker-compose.yml up -d`
+After changes: `docker compose down && docker compose up -d`
 
 ---
 

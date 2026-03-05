@@ -133,4 +133,4 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: ${MODEL_ARTIFACTS_HOST_PATH:?Set MODEL_ARTIFACTS_HOST_PATH in .env}
+      device: ${MODEL_ARTIFACTS_HOST_PATH:-./model_artifacts}
