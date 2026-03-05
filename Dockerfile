@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Install dependencies (dashboard group only)
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
 RUN uv pip install --system ".[dashboard]"
 
 # Copy application code

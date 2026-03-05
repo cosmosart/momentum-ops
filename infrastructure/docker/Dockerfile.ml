@@ -37,7 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # ── Install core + ml dependencies ───────────────────────────────────────
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
 RUN uv pip install --system ".[ml]"
 
 # ── Copy full project (training scripts need everything) ─────────────────
