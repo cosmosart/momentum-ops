@@ -1,0 +1,101 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.yml — momentum-ops production stack
+#
+# Services:
+#   postgres   — PostgreSQL 18 with baseline DDL
+#   worker     — Prefect ingestion worker (replaces APScheduler container)
+#   dashboard  — Streamlit multipage dashboard
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:18-alpine
+    container_name: momentum-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-momentum_db}
+      POSTGRES_USER: ${DB_USER:-momentum_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-momentum_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/ddl/baseline.sql:/docker-entrypoint-initdb.d/01_baseline.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - momentum-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-momentum_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Prefect Ingestion Worker ────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.worker
+    container_name: momentum-worker
+    volumes:
+      - model_artifacts:/opt/momentum-ops/model_artifacts
+    environment:
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-momentum_db}
+      DB_USER: ${DB_USER:-momentum_user}
+      DB_PASSWORD: ${DB_PASSWORD:-momentum_password}
+      DEFAULT_TICKER: ${DEFAULT_TICKER:-AAPL}
+      PREFECT_API_URL: ${PREFECT_API_URL:-http://prefect:4200/api}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - momentum-network
+    restart: unless-stopped
+
+  # ── Streamlit Dashboard ─────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.dashboard
+    container_name: momentum-dashboard
+    ports:
+      - "8501:8501"
+    volumes:
+      - model_artifacts:/opt/momentum-ops/model_artifacts
+    environment:
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-momentum_db}
+      DB_USER: ${DB_USER:-momentum_user}
+      DB_PASSWORD: ${DB_PASSWORD:-momentum_password}
+      DEFAULT_TICKER: ${DEFAULT_TICKER:-AAPL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      worker:
+        condition: service_started
+    networks:
+      - momentum-network
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
+    restart: unless-stopped
+
+networks:
+  momentum-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  model_artifacts:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${MODEL_ARTIFACTS_HOST_PATH:?Set MODEL_ARTIFACTS_HOST_PATH in .env}

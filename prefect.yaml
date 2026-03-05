@@ -1,0 +1,73 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Prefect Deployment Configuration — momentum-ops
+#
+# Apply with:
+#   prefect deploy --all          (deploys every entry below)
+#   prefect deploy -n krx-realtime
+#
+# Prerequisites:
+#   1. A Prefect server / Cloud workspace is running.
+#   2. A work pool named 'proxmox-local-pool' exists (type: process or docker).
+#   3. A worker is polling that pool:
+#        prefect worker start -p proxmox-local-pool
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: momentum-ops
+prefect-version: ">=3.0"
+
+# ── Build step (no-op for process pools; used by docker pool types) ──────────
+build: []
+
+# ── Push step (no-op — code lives on the worker already) ─────────────────────
+push: []
+
+# ── Pull step — ensure the worker has the repo checked out ────────────────────
+pull:
+  - prefect.deployments.steps.set_working_directory:
+      directory: /opt/momentum-ops
+
+# ── Deployments ──────────────────────────────────────────────────────────────
+
+deployments:
+
+  # ┌──────────────────────────────────────────────────────────────────────────┐
+  # │  KRX Real-Time — Every 5 min, Mon-Fri, 09:00-15:30 JST (Asia/Tokyo)   │
+  # └──────────────────────────────────────────────────────────────────────────┘
+  - name: krx-realtime
+    entrypoint: ingestion/flows.py:krx_realtime_flow
+    description: >-
+      High-frequency ingestion during KRX trading hours.
+      Fetches realtime + incremental daily data for all active tickers.
+    work_pool:
+      name: proxmox-local-pool
+    schedules:
+      - cron: "*/5 9-15 * * 1-5"
+        timezone: "Asia/Tokyo"
+        active: true
+    parameters: {}
+    tags:
+      - ingestion
+      - krx
+      - realtime
+    enforce_parameter_schema: true
+
+  # ┌──────────────────────────────────────────────────────────────────────────┐
+  # │  Daily Batch — 18:00 JST every day (post-market close, all regions)    │
+  # └──────────────────────────────────────────────────────────────────────────┘
+  - name: daily-batch
+    entrypoint: ingestion/flows.py:daily_batch_flow
+    description: >-
+      End-of-day batch flow that runs full ingestion + XGBoost inference
+      for every active ticker after all major markets have closed.
+    work_pool:
+      name: proxmox-local-pool
+    schedules:
+      - cron: "0 18 * * *"
+        timezone: "Asia/Tokyo"
+        active: true
+    parameters: {}
+    tags:
+      - ingestion
+      - batch
+      - daily
+    enforce_parameter_schema: true

@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Dockerfile.dashboard — Streamlit dashboard container
+#
+# Installs ONLY the 'dashboard' optional-dependency group via uv.
+#
+# Build:
+#   docker build -f infrastructure/docker/Dockerfile.dashboard -t momentum-ops:dashboard .
+# ─────────────────────────────────────────────────────────────────────────────
+
+FROM python:3.12-slim AS base
+
+LABEL maintainer="Momentum Ops Team"
+LABEL description="Streamlit dashboard for momentum-ops"
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /opt/momentum-ops
+
+# ── System deps ──────────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl ca-certificates libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Install uv ───────────────────────────────────────────────────────────
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+COPY pyproject.toml ./
+RUN uv pip install --system ".[dashboard]"
+
+# ── Copy app source ──────────────────────────────────────────────────────
+COPY shared/ shared/
+COPY dashboard/ dashboard/
+COPY models/ models/
+COPY model_artifacts/ model_artifacts/
+
+# ── Non-root user ────────────────────────────────────────────────────────
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /opt/momentum-ops
+USER appuser
+
+EXPOSE 8501
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+
+CMD ["streamlit", "run", "dashboard/app.py", \
+     "--server.port=8501", "--server.address=0.0.0.0"]

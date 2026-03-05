@@ -3,7 +3,7 @@
   "horizon": "1d",
   "trading_days": 1,
   "hurdle": 0.005,
-  "threshold": 0.0026,
-  "scale_pos_weight": 2.4446,
-  "positive_class_pct": 29.03
+  "threshold": 0.4728,
+  "scale_pos_weight": 2.3201,
+  "positive_class_pct": 30.12
 }

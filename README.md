@@ -1,15 +1,17 @@
 # Momentum Ops — Market Analysis Platform
 
-A production-grade market analysis system built with Python 3.13, Streamlit,
-XGBoost, and PostgreSQL 18. Features automated data ingestion, technical
-analysis (RSI, MACD, Bollinger Bands, ATR), four targeted XGBoost directional-
+A production-grade stock momentum prediction monorepo built with Python 3.12,
+Streamlit, XGBoost, PostgreSQL 18, and Prefect. Features domain-driven
+architecture, automated data ingestion via Prefect flows, technical analysis
+(RSI, MACD, Bollinger Bands, ATR), four targeted XGBoost directional-
 probability models with TreeSHAP explainability, an AI Advisory prompt
-generator, and a Streamlit dashboard — all running in a single Docker container
-on TrueNAS SCALE.
+generator, and a Streamlit multipage dashboard — orchestrated via Docker
+Compose on Proxmox / TrueNAS SCALE.
 
 ## Features
 
-- **Real-time Data Ingestion**: Automated OHLCV fetching via yfinance + APScheduler (5-min cycle)
+- **Prefect Orchestration**: Two scheduled flows replace legacy APScheduler — KRX realtime (5-min, M-F 09:00–15:30 JST) and Daily Batch (18:00 JST)
+- **Domain-Driven Monorepo**: `shared/`, `ingestion/`, `models/`, `dashboard/` with a PEP 621 `pyproject.toml` managed by `uv`
 - **Technical Analysis**: RSI (14), MACD (12/26/9), Bollinger Bands (20, 2), ATR (14), rolling volatility, lagged log-returns
 - **Four XGBoost Directional Models**: Single-pass feature engineering → 4 concurrent `predict_proba` calls
   - ⚡ Active 1-Week (1.5 % hurdle)
@@ -18,60 +20,71 @@ on TrueNAS SCALE.
   - 🧪 Experimental — Next Business Day (0.5 % hurdle)
 - **TreeSHAP Local Explainability**: Per-prediction feature contributions stored as JSONB in PostgreSQL
 - **AI Advisory Prompt Generator**: Structured Markdown prompt with quantitative data, SHAP values, and multi-language support — ready to paste into ChatGPT / Gemini / Claude
-- **Interactive Dashboard**: Streamlit with Plotly gauges, SHAP bar charts, pill-style navigation
-- **Ticker Validation**: yfinance-backed validation when adding new tickers
+- **Interactive Dashboard**: Streamlit native multipage routing with Plotly gauges and SHAP bar charts
+- **Pydantic Settings**: Centralised `BaseSettings` config with connection pooling (`psycopg_pool`)
 - **Decoupled Training**: Optuna Bayesian HPO on local GPU (RTX 3070), model artifacts hot-swapped via NFS
 - **PostgreSQL 18**: Persistent storage with UPSERT, JSONB columns, and proper indexing
-- **Docker**: Single container image (`cosmosart/momentum-ops`) for scheduler + dashboard
+- **uv Package Manager**: Optional dependency groups (`ingestion`, `ml`, `dashboard`, `dev`) — no monolithic `requirements.txt`
 
 ## Architecture
 
 ```
 momentum-ops/
-├── database/               # PostgreSQL schema, migrations, and CRUD
-│   ├── schema.sql          # DDL — 4 tables with indexes
-│   ├── db.py               # Database class — UPSERT with 17 params
-│   └── migrations/         # Incremental ALTER TABLE scripts
-│       ├── 002_add_multi_horizon_columns.sql
-│       ├── 003_add_multi_strategy_columns.sql
-│       ├── 004_drop_dead_columns.sql
-│       └── 005_add_feature_contributions.sql
-├── ingestion/              # Data fetching and scheduling
-│   ├── fetcher.py          # yfinance OHLCV fetcher
-│   └── scheduler.py        # APScheduler → features → 4-model inference → DB
-├── models/                 # ML models and feature engineering
-│   ├── features.py         # 15 FEATURE_COLUMNS, engineer_features(), make_target()
-│   └── models.py           # FourModelPredictor, DirectionPredictor, TreeSHAP
-├── model_artifacts/        # XGBoost JSON weights + threshold sidecars (NFS mount)
-├── dashboard/              # Streamlit UI
-│   ├── app.py              # Entry point — sidebar nav (pills), ticker selector
-│   ├── momentum_tab.py     # Candlestick, RSI, MACD charts
-│   ├── predictions_tab.py  # Directional Outlook — gauges, SHAP, signal values
-│   ├── ai_advisor_tab.py   # AI Advisory prompt export (multi-language)
-│   ├── prompt_generator.py # Structured LLM prompt builder
-│   ├── ticker_management_tab.py  # Add/deactivate/reactivate tickers
-│   └── utils.py            # Currency formatting helpers
-├── scripts/                # Training and deployment
-│   ├── train_local.py      # Optuna HPO + XGBoost GPU training
-│   ├── build_and_upload.sh # Docker build + push + rsync
-│   └── deploy.sh           # rsync model artifacts to TrueNAS
-├── docs/architecture/      # Technical documentation
-│   └── current_state.md    # Mermaid diagram + design rationale
-├── Dockerfile              # Python 3.13 slim, single-stage build
-├── docker-compose.yml      # 3-service stack (postgres, scheduler, dashboard)
-└── requirements.txt        # Python dependencies
+├── pyproject.toml                  # PEP 621 — uv-managed deps with optional groups
+├── prefect.yaml                    # Prefect deployments: krx-realtime + daily-batch
+├── shared/                         # Cross-cutting glue layer
+│   ├── config.py                   # Pydantic BaseSettings (DB_URL, API keys, app config)
+│   └── database.py                 # psycopg_pool ConnectionPool, get_connection(), check_health()
+├── ingestion/                      # Data fetching and Prefect flows
+│   ├── fetcher.py                  # DataFetcher — yfinance wrapper for realtime (1m) and daily OHLCV
+│   └── flows.py                    # Prefect @flow/@task: fetch_active_tickers, upsert, backfill, inference
+├── models/                         # ML models and feature engineering
+│   ├── features.py                 # 15 FEATURE_COLUMNS, engineer_features(), make_target()
+│   └── models.py                   # FourModelPredictor, DirectionPredictor, TreeSHAP, calculate_indicators()
+├── model_artifacts/                # XGBoost JSON weights + threshold sidecars (NFS bind mount)
+│   ├── xgboost_{strategy}.json             # 4 model weight files
+│   └── xgboost_threshold_{strategy}.json   # 4 F1-optimal threshold sidecars
+├── dashboard/                      # Streamlit UI (native multipage routing)
+│   ├── app.py                      # Entry point — shared sidebar (ticker selector, DB status), Home page
+│   ├── pages/                      # Streamlit auto-discovered pages
+│   │   ├── 1_directional_outlook.py
+│   │   ├── 2_momentum_analysis.py
+│   │   ├── 3_ai_advisor.py
+│   │   └── 4_manage_tickers.py
+│   ├── momentum_tab.py             # Candlestick + RSI + MACD subplots, SMA/EMA overlays
+│   ├── predictions_tab.py          # Directional Outlook — probability gauges, TreeSHAP bar charts
+│   ├── ai_advisor_tab.py           # LLM prompt export with indicators + SHAP values
+│   ├── prompt_generator.py         # generate_llm_advisory_prompt() — Markdown prompt builder
+│   ├── ticker_management_tab.py    # Add/deactivate/reactivate tickers with yfinance validation
+│   └── utils.py                    # format_price(), format_price_change(), get_currency_info()
+├── infrastructure/                 # Docker and DDL
+│   ├── docker/
+│   │   ├── Dockerfile.worker       # python:3.12-slim + uv — installs [ingestion], runs Prefect worker
+│   │   └── Dockerfile.dashboard    # python:3.12-slim + uv — installs [dashboard], runs Streamlit
+│   ├── ddl/
+│   │   └── baseline.sql            # Unified idempotent schema (5 tables)
+│   └── docker-compose.yml          # 3 services: postgres, worker, dashboard
+├── scripts/                        # Training, backfill, and deployment
+│   ├── train_local.py              # Optuna Bayesian HPO + XGBoost GPU training
+│   ├── backfill_history.py         # Bulk yfinance history download
+│   └── deploy.sh                   # rsync model artifacts to TrueNAS via SSH
+├── tests/                          # Pytest suite
+│   └── test_shared.py              # Config, database, and flow import smoke tests
+└── docs/architecture/
+    └── current_state.md            # Mermaid architecture diagram + design rationale
 ```
 
 ## Database Schema
 
 ### Tables
 
-1. **price_realtime**: Real-time intraday price data
-2. **price_daily**: Daily OHLCV data
-3. **analysis_info**: Technical indicators + 4 probability REAL columns + 4 JSONB feature contribution columns
-4. **tickers**: Tracked symbols with active/inactive status
+1. **tickers**: Tracked symbols with active/inactive status
+2. **price_realtime**: Real-time intraday price data
+3. **price_daily**: Daily OHLCV data
+4. **fundamental_daily**: Daily fundamental data
+5. **analysis_info**: Technical indicators + 4 probability REAL columns + 4 JSONB feature contribution columns
 
-### analysis_info columns (post-migration 005)
+### analysis_info columns
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -90,8 +103,8 @@ momentum-ops/
 
 ### Prerequisites
 
-- Docker and Docker Compose (recommended)
-- OR Python 3.13+ and PostgreSQL 18+
+- **Docker & Docker Compose** (recommended)
+- **OR** Python 3.12+ with [`uv`](https://docs.astral.sh/uv/) and PostgreSQL 18+
 
 ### Docker Deployment (Recommended)
 
@@ -99,19 +112,25 @@ momentum-ops/
 git clone https://github.com/cosmosart/momentum-ops.git
 cd momentum-ops
 cp .env.example .env    # edit as needed
-docker-compose up -d
+docker compose -f infrastructure/docker-compose.yml up -d
 ```
 
 Access the dashboard at **http://localhost:8501**
 
-### Local Development
+### Local Development (uv)
 
 ```bash
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Start scheduler
-python run_scheduler.py
+# Install all dependency groups
+uv pip install -e ".[ingestion,ml,dashboard,dev]"
+
+# Deploy Prefect flows (requires a running Prefect server)
+prefect deploy --all
+
+# Start a Prefect worker
+prefect worker start -p proxmox-local-pool
 
 # Start dashboard (separate terminal)
 streamlit run dashboard/app.py
@@ -121,10 +140,18 @@ streamlit run dashboard/app.py
 
 | Page | Description |
 |------|-------------|
-| 🎯 **Directional Outlook** | XGBoost probability gauges, TreeSHAP bar charts, Bollinger/RSI/MACD signal values, all-models overview |
+| 🏠 **Home** | Overview and quick links |
+| 🎯 **Directional Outlook** | XGBoost probability gauges, TreeSHAP bar charts, Bollinger/RSI/MACD signal values |
 | 📊 **Momentum Analysis** | Candlestick charts, RSI with overbought/oversold zones, MACD with signal line + histogram |
-| 🤖 **AI Advisor** | Generate a structured LLM prompt with indicators, SHAP values, portfolio mandates, and multi-language support |
+| 🤖 **AI Advisor** | Generate a structured LLM prompt with indicators, SHAP values, and portfolio mandates |
 | ⚙️ **Manage Tickers** | Add (with yfinance validation), deactivate, or reactivate tracked symbols |
+
+## Prefect Deployments
+
+| Deployment | Schedule | Description |
+|------------|----------|-------------|
+| `krx-realtime` | `*/5 9-15 * * 1-5` (Asia/Tokyo) | Realtime + incremental daily during KRX trading hours |
+| `daily-batch` | `0 18 * * *` (Asia/Tokyo) | Full ingestion + inference after all markets close |
 
 ## Training
 
@@ -144,17 +171,20 @@ Model artifacts are hot-swapped via NFS bind mount — no container rebuild requ
 
 | Component | Technology |
 |-----------|-----------|
-| Language | Python 3.13 |
-| Database | PostgreSQL 18 (psycopg 3) |
+| Language | Python 3.12 |
+| Package Manager | uv (Astral) with PEP 621 `pyproject.toml` |
+| Database | PostgreSQL 18 (psycopg 3 + psycopg_pool) |
+| Configuration | Pydantic Settings v2 |
+| Orchestration | Prefect 3 (replaces APScheduler) |
 | ML | XGBoost 2.1+ (GPU `hist`), scikit-learn, Optuna |
 | Explainability | Native TreeSHAP (`pred_contribs=True`) |
-| Dashboard | Streamlit 1.44+, Plotly |
+| Dashboard | Streamlit 1.44+ (native multipage), Plotly |
 | Data | yfinance, pandas, ta |
-| Scheduling | APScheduler (5-min cycle) |
-| Deployment | Docker, Docker Compose, NFS |
-| Table Rendering | tabulate (pandas `.to_markdown()`) |
+| Deployment | Docker Compose, Proxmox, NFS |
 
 ## Configuration
+
+All settings are managed via environment variables (or `.env` file) and validated by Pydantic:
 
 ```bash
 # .env
@@ -166,6 +196,8 @@ DB_PASSWORD=momentum_password
 DEFAULT_TICKER=AAPL
 UPDATE_INTERVAL_MINUTES=5
 SCHEDULER_TIMEZONE=UTC
+PREFECT_API_URL=http://prefect:4200/api
+MODEL_ARTIFACTS_HOST_PATH=/mnt/data/model_artifacts
 ```
 
 ## License
