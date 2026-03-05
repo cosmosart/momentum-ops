@@ -8,7 +8,7 @@
 # │  Host              │ Compose file           │ Ports                     │
 # ├──────────────────────────────────────────────────────────────────────────┤
 # │  db-server         │ docker-compose.db.yml   │ 5432                     │
-# │  prefect-server    │ docker-compose.prefect.yml │ 4200, 5433           │
+# │  prefect-server    │ docker-compose.prefect.yml │ 4200               │
 # │  dashboard-server  │ docker-compose.dashboard.yml │ 8501               │
 # │  ml-server         │ docker-compose.ml.yml   │ (none — manual runs)     │
 # └──────────────────────────────────────────────────────────────────────────┘
