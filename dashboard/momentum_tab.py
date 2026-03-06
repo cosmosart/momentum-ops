@@ -277,7 +277,14 @@ def render_momentum_tab(ticker: str):
                 close=df['Close'],
                 name='Price',
                 customdata=tick_labels.values,
-                hovertext=tick_labels.values,
+                hoverinfo='text',
+                text=[
+                    f"{tick_labels.iloc[i]}<br>"
+                    f"O: {df['Open'].iloc[i]:.2f}  H: {df['High'].iloc[i]:.2f}<br>"
+                    f"L: {df['Low'].iloc[i]:.2f}  C: {df['Close'].iloc[i]:.2f}<br>"
+                    f"Vol: {int(df['Volume'].iloc[i]):,}"
+                    for i in range(len(df))
+                ],
             ),
             row=1, col=1
         )
@@ -399,9 +406,45 @@ def render_momentum_tab(ticker: str):
         
         # RSI chart
         if 'RSI' in df.columns:
+            rsi_vals = df['RSI']
+            # Overbought fill (above 70)
+            rsi_above_70 = rsi_vals.where(rsi_vals >= 70)
             fig.add_trace(
                 go.Scatter(
-                    x=x_idx, y=df['RSI'], name='RSI', line=dict(color='purple'),
+                    x=x_idx, y=[70] * len(df), mode='lines',
+                    line=dict(width=0), showlegend=False, hoverinfo='skip',
+                ),
+                row=2, col=1,
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=x_idx, y=rsi_above_70, mode='lines',
+                    line=dict(width=0), showlegend=False, hoverinfo='skip',
+                    fill='tonexty', fillcolor='rgba(239,83,80,0.25)',
+                ),
+                row=2, col=1,
+            )
+            # Oversold fill (below 30)
+            rsi_below_30 = rsi_vals.where(rsi_vals <= 30)
+            fig.add_trace(
+                go.Scatter(
+                    x=x_idx, y=[30] * len(df), mode='lines',
+                    line=dict(width=0), showlegend=False, hoverinfo='skip',
+                ),
+                row=2, col=1,
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=x_idx, y=rsi_below_30, mode='lines',
+                    line=dict(width=0), showlegend=False, hoverinfo='skip',
+                    fill='tonexty', fillcolor='rgba(38,166,154,0.25)',
+                ),
+                row=2, col=1,
+            )
+            # RSI line on top
+            fig.add_trace(
+                go.Scatter(
+                    x=x_idx, y=rsi_vals, name='RSI', line=dict(color='purple'),
                     customdata=tick_labels.values,
                     hovertemplate='%{customdata}<br>RSI: %{y:.2f}<extra></extra>',
                 ),
@@ -455,8 +498,15 @@ def render_momentum_tab(ticker: str):
             height=1000,
             showlegend=True,
             xaxis_rangeslider_visible=False,
-            hovermode='x unified'
+            hovermode='closest',
+            spikedistance=-1,
         )
+        # Spike crosshair on all x-axes
+        for ax in ['xaxis', 'xaxis2', 'xaxis3']:
+            fig.update_layout(**{ax: dict(
+                showspikes=True, spikemode='across', spikethickness=0.5,
+                spikecolor='grey', spikedash='dot',
+            )})
         
         # Apply categorical tick labels on the price chart (row 1)
         fig.update_xaxes(
