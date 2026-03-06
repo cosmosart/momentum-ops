@@ -211,22 +211,8 @@ def render_momentum_tab(ticker: str):
         with col1:
             current_price = df.iloc[-1]['Close']
             st.metric("Current Price", format_price(current_price, yf_symbol))
-        
+
         with col2:
-            if 'RSI' in df.columns and not pd.isna(df.iloc[-1]['RSI']):
-                rsi_value = df.iloc[-1]['RSI']
-                st.metric("RSI (14)", f"{rsi_value:.2f}")
-            else:
-                st.metric("RSI (14)", "N/A")
-        
-        with col3:
-            if 'MACD' in df.columns and not pd.isna(df.iloc[-1]['MACD']):
-                macd_value = df.iloc[-1]['MACD']
-                st.metric("MACD", f"{macd_value:.4f}")
-            else:
-                st.metric("MACD", "N/A")
-        
-        with col4:
             if len(df) >= 2:
                 prev_close = df.iloc[-2]['Close']
                 price_change = df.iloc[-1]['Close'] - prev_close
@@ -238,6 +224,20 @@ def render_momentum_tab(ticker: str):
                     st.metric(f"{timeframe} Change", "N/A", format_price_change(price_change, yf_symbol))
             else:
                 st.metric(f"{timeframe} Change", "N/A")
+
+        with col3:
+            if 'RSI' in df.columns and not pd.isna(df.iloc[-1]['RSI']):
+                rsi_value = df.iloc[-1]['RSI']
+                st.metric("RSI (14)", f"{rsi_value:.2f}")
+            else:
+                st.metric("RSI (14)", "N/A")
+        
+        with col4:
+            if 'MACD' in df.columns and not pd.isna(df.iloc[-1]['MACD']):
+                macd_value = df.iloc[-1]['MACD']
+                st.metric("MACD", f"{macd_value:.4f}")
+            else:
+                st.metric("MACD", "N/A")
         
         with col5:
             if 'RSI' in df.columns and not pd.isna(df.iloc[-1]['RSI']):
