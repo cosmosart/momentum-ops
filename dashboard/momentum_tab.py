@@ -205,8 +205,8 @@ def render_momentum_tab(ticker: str):
         indicators = calculate_indicators(df)
         df = pd.concat([df, indicators], axis=1)
         
-        # Display current metrics
-        col1, col2, col3, col4 = st.columns(4)
+        # Display current metrics + signal interpretation
+        col1, col2, col3, col4, col5, col6 = st.columns([1.5, 1.5, 1.5, 1.5, 2, 2])
         
         with col1:
             current_price = df.iloc[-1]['Close']
@@ -238,6 +238,32 @@ def render_momentum_tab(ticker: str):
                     st.metric(f"{timeframe} Change", "N/A", format_price_change(price_change, yf_symbol))
             else:
                 st.metric(f"{timeframe} Change", "N/A")
+        
+        with col5:
+            if 'RSI' in df.columns and not pd.isna(df.iloc[-1]['RSI']):
+                rsi = df.iloc[-1]['RSI']
+                if rsi > 70:
+                    st.warning("🔴 Overbought")
+                elif rsi < 30:
+                    st.success("🟢 Oversold")
+                else:
+                    st.info("🟡 RSI Neutral")
+            else:
+                st.info("RSI N/A")
+        
+        with col6:
+            if 'MACD' in df.columns and 'MACD_signal' in df.columns:
+                macd = df.iloc[-1]['MACD']
+                signal = df.iloc[-1]['MACD_signal']
+                if not pd.isna(macd) and not pd.isna(signal):
+                    if macd > signal:
+                        st.success("🟢 MACD Bullish")
+                    else:
+                        st.warning("🔴 MACD Bearish")
+                else:
+                    st.info("MACD N/A")
+            else:
+                st.info("MACD N/A")
         
         st.divider()
         
@@ -524,39 +550,6 @@ def render_momentum_tab(ticker: str):
         fig.update_yaxes(title_text="MACD", row=3, col=1)
         
         st.plotly_chart(fig, use_container_width=True)
-        
-        # Analysis interpretation
-        st.subheader("Signal Interpretation")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("**RSI Analysis:**")
-            if 'RSI' in df.columns and not pd.isna(df.iloc[-1]['RSI']):
-                rsi = df.iloc[-1]['RSI']
-                if rsi > 70:
-                    st.warning("🔴 Overbought - RSI above 70. Consider selling.")
-                elif rsi < 30:
-                    st.success("🟢 Oversold - RSI below 30. Consider buying.")
-                else:
-                    st.info("🟡 Neutral - RSI in normal range (30-70).")
-            else:
-                st.info("Not enough data to calculate RSI.")
-        
-        with col2:
-            st.write("**MACD Analysis:**")
-            if 'MACD' in df.columns and 'MACD_signal' in df.columns:
-                macd = df.iloc[-1]['MACD']
-                signal = df.iloc[-1]['MACD_signal']
-                if not pd.isna(macd) and not pd.isna(signal):
-                    if macd > signal:
-                        st.success("🟢 Bullish - MACD above signal line.")
-                    else:
-                        st.warning("🔴 Bearish - MACD below signal line.")
-                else:
-                    st.info("Not enough data to calculate MACD.")
-            else:
-                st.info("Not enough data to calculate MACD.")
     
     except Exception as e:
         st.error(f"Error loading data: {e}")
