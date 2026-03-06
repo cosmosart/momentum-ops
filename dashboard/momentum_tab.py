@@ -275,7 +275,7 @@ def render_momentum_tab(ticker: str):
             shared_xaxes=True,
             vertical_spacing=0.05,
             subplot_titles=('Price', 'RSI', 'MACD'),
-            row_heights=[1.0, 0.25, 0.25]
+            row_heights=[1.0, 0.25, 0.375]
         )
         
         # Price chart
@@ -423,8 +423,9 @@ def render_momentum_tab(ticker: str):
                 go.Scatter(x=x_idx, y=df['MACD_signal'], name='Signal', line=dict(color='orange')),
                 row=3, col=1
             )
+            hist_colors = ['#26a69a' if v >= 0 else '#ef5350' for v in df['MACD_hist']]
             fig.add_trace(
-                go.Bar(x=x_idx, y=df['MACD_hist'], name='Histogram', marker_color='gray'),
+                go.Bar(x=x_idx, y=df['MACD_hist'], name='Histogram', marker_color=hist_colors),
                 row=3, col=1
             )
         
