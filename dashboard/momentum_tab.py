@@ -46,9 +46,9 @@ def render_momentum_tab(ticker: str):
     
     st.header(f"Momentum Analysis for {company_name}")
     
-    # Timeframe selector
-    col1, col2, col3 = st.columns([2, 2, 6])
-    with col1:
+    # Controls row
+    col_tf, col_period, col_ma_type, col_ma_select, col_sr_toggle, col_sr_levels = st.columns([1.5, 1.5, 1, 3, 1.5, 0.5])
+    with col_tf:
         timeframe = st.selectbox(
             "Timeframe",
             options=["5 Minutes", "15 Minutes", "30 Minutes", "1 Hour", "4 Hours", "1 Day", "1 Week"],
@@ -56,13 +56,13 @@ def render_momentum_tab(ticker: str):
             help="Select data timeframe"
         )
     
-    with col2:
+    with col_period:
         # Period selector based on timeframe
         if timeframe in ["5 Minutes", "15 Minutes", "30 Minutes", "1 Hour", "4 Hours"]:
-            period_options = ["1 Day", "5 Days", "10 Days", "15 Days", "1 Month", "Custom Range"]
+            period_options = ["1 Day", "2 Days", "3 Days", "5 Days", "10 Days", "15 Days", "1 Month", "Custom Range"]
             default_period = "5 Days"
         else:
-            period_options = ["10 Days", "15 Days", "1 Month", "3 Months", "6 Months", "1 Year", "3 Years", "5 Years", "Max", "Custom Range"]
+            period_options = ["2 Days", "3 Days", "10 Days", "15 Days", "1 Month", "3 Months", "6 Months", "1 Year", "3 Years", "5 Years", "Max", "Custom Range"]
             default_period = "3 Months"
         
         period = st.selectbox(
@@ -71,35 +71,6 @@ def render_momentum_tab(ticker: str):
             index=period_options.index(default_period) if default_period in period_options else 0,
             help="Historical period to display"
         )
-    
-    # Custom date range selector
-    start_date = None
-    end_date = None
-    
-    if period == "Custom Range":
-        st.write("")  # Spacer
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            start_date = st.date_input(
-                "Start Date",
-                value=pd.Timestamp.now() - pd.Timedelta(days=30),
-                help="Select start date for custom range"
-            )
-        
-        with col2:
-            end_date = st.date_input(
-                "End Date",
-                value=pd.Timestamp.now(),
-                help="Select end date for custom range"
-            )
-        
-        st.info(f"📅 Custom range: {start_date} to {end_date}")
-    
-    # Moving Average selector
-    st.write("")  # Spacer
-    
-    col_ma_type, col_ma_select = st.columns([1, 3])
     
     with col_ma_type:
         ma_types = st.multiselect(
@@ -112,18 +83,14 @@ def render_momentum_tab(ticker: str):
     with col_ma_select:
         ma_periods = st.multiselect(
             "Moving Averages",
-            options=["5", "10", "20", "50", "100", "200"],
-            default=["10", "20"],
+            options=["5", "10", "20", "25", "50", "100", "200"],
+            default=["5", "25", "200"],
             help="Select moving average periods to display on price chart"
         )
     
-    # Support and Resistance toggle
-    st.write("")  # Spacer
-    col_sr_toggle, col_sr_levels = st.columns([2, 1])
-    
     with col_sr_toggle:
         show_support_resistance = st.checkbox(
-            "Show Support & Resistance Levels",
+            "Support & Resistance",
             value=False,
             help="Display support and resistance levels based on local extrema"
         )
@@ -139,6 +106,26 @@ def render_momentum_tab(ticker: str):
         else:
             sr_levels = 1
     
+    # Custom date range selector
+    start_date = None
+    end_date = None
+    
+    if period == "Custom Range":
+        col_start, col_end = st.columns(2)
+        with col_start:
+            start_date = st.date_input(
+                "Start Date",
+                value=pd.Timestamp.now() - pd.Timedelta(days=30),
+                help="Select start date for custom range"
+            )
+        with col_end:
+            end_date = st.date_input(
+                "End Date",
+                value=pd.Timestamp.now(),
+                help="Select end date for custom range"
+            )
+        st.info(f"📅 Custom range: {start_date} to {end_date}")
+    
     # Map selections to yfinance parameters
     interval_map = {
         "5 Minutes": "5m",
@@ -152,6 +139,8 @@ def render_momentum_tab(ticker: str):
     
     period_map = {
         "1 Day": "1d",
+        "2 Days": "2d",
+        "3 Days": "3d",
         "5 Days": "5d",
         "10 Days": "10d",
         "15 Days": "15d",
@@ -286,7 +275,9 @@ def render_momentum_tab(ticker: str):
                 high=df['High'],
                 low=df['Low'],
                 close=df['Close'],
-                name='Price'
+                name='Price',
+                customdata=tick_labels.values,
+                hovertext=tick_labels.values,
             ),
             row=1, col=1
         )
@@ -296,6 +287,7 @@ def render_momentum_tab(ticker: str):
             "5": "#FF6B6B",      # Red
             "10": "#FFA500",     # Orange
             "20": "#4ECDC4",     # Teal
+            "25": "#FFD700",     # Gold
             "50": "#95E1D3",     # Light teal
             "100": "#9B59B6",    # Purple
             "200": "#3498DB"     # Blue
@@ -316,6 +308,8 @@ def render_momentum_tab(ticker: str):
                             x=x_idx,
                             y=df[col_name],
                             name=col_name,
+                            customdata=tick_labels.values,
+                            hovertemplate='%{customdata}<br>%{y:.4f}<extra>%{fullData.name}</extra>',
                             line=dict(
                                 color=period_colors.get(period, '#808080'),
                                 width=1.5,
@@ -406,7 +400,11 @@ def render_momentum_tab(ticker: str):
         # RSI chart
         if 'RSI' in df.columns:
             fig.add_trace(
-                go.Scatter(x=x_idx, y=df['RSI'], name='RSI', line=dict(color='purple')),
+                go.Scatter(
+                    x=x_idx, y=df['RSI'], name='RSI', line=dict(color='purple'),
+                    customdata=tick_labels.values,
+                    hovertemplate='%{customdata}<br>RSI: %{y:.2f}<extra></extra>',
+                ),
                 row=2, col=1
             )
             # Add RSI reference lines
@@ -416,11 +414,19 @@ def render_momentum_tab(ticker: str):
         # MACD chart
         if 'MACD' in df.columns:
             fig.add_trace(
-                go.Scatter(x=x_idx, y=df['MACD'], name='MACD', line=dict(color='blue')),
+                go.Scatter(
+                    x=x_idx, y=df['MACD'], name='MACD', line=dict(color='blue'),
+                    customdata=tick_labels.values,
+                    hovertemplate='%{customdata}<br>MACD: %{y:.4f}<extra></extra>',
+                ),
                 row=3, col=1
             )
             fig.add_trace(
-                go.Scatter(x=x_idx, y=df['MACD_signal'], name='Signal', line=dict(color='orange')),
+                go.Scatter(
+                    x=x_idx, y=df['MACD_signal'], name='Signal', line=dict(color='orange'),
+                    customdata=tick_labels.values,
+                    hovertemplate='%{customdata}<br>Signal: %{y:.4f}<extra></extra>',
+                ),
                 row=3, col=1
             )
             hist_vals = df['MACD_hist'].values
@@ -435,7 +441,12 @@ def render_momentum_tab(ticker: str):
                 else:
                     hist_colors.append('#ef5350' if diverging else '#ef9a9a')
             fig.add_trace(
-                go.Bar(x=x_idx, y=df['MACD_hist'], name='Histogram', marker_color=hist_colors),
+                go.Bar(
+                    x=x_idx, y=df['MACD_hist'], name='Histogram',
+                    marker_color=hist_colors,
+                    customdata=tick_labels.values,
+                    hovertemplate='%{customdata}<br>Hist: %{y:.4f}<extra></extra>',
+                ),
                 row=3, col=1
             )
         
