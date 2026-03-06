@@ -139,10 +139,29 @@ Production deploys each concern to its own host/VM using split compose files in 
 | ml-server | `docker-compose.ml.yml` | Ad-hoc training (no exposed ports) |
 
 ```bash
-# Example: start db-server
+# On each host: copy and fill in .env
 cd infrastructure/deploy
 cp .env.template .env   # fill in IPs and passwords
+
+# 1. db-server — start PostgreSQL (must be first)
 docker compose -f docker-compose.db.yml --env-file .env up -d
+
+# 2. prefect-server — start Prefect API + ingestion worker
+docker compose -f docker-compose.prefect.yml --env-file .env up -d --build
+
+# 3. Register Prefect deployments (once after first boot)
+docker exec momentum-worker bash -c \
+  "PREFECT_API_URL=http://prefect:4200/api ./scripts/bootstrap_prefect.sh"
+
+# 4. dashboard-server — start Streamlit
+docker compose -f docker-compose.dashboard.yml --env-file .env up -d --build
+
+# 5. ml-server — ad-hoc training (run on demand)
+docker compose -f docker-compose.ml.yml --env-file .env run --rm ml \
+  python scripts/train_local.py --models active_1w --tune
+
+# Trigger a manual ingestion run
+docker exec momentum-worker prefect deployment run daily-batch-flow/daily-batch
 ```
 
 Startup order: **db → prefect → dashboard → ml** (see `infrastructure/deploy/README.md` for details).
