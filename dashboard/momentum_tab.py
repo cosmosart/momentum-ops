@@ -238,54 +238,6 @@ def render_momentum_tab(ticker: str):
                 st.metric(f"{timeframe} Change", "N/A")
 
         with col3:
-            if 'RSI' in df.columns and not pd.isna(df.iloc[-1]['RSI']):
-                rsi_value = df.iloc[-1]['RSI']
-                if rsi_value > 70:
-                    signal_text = "🔴 Overbought"
-                    signal_color = "#ff2b2b"
-                elif rsi_value < 30:
-                    signal_text = "🟢 Oversold"
-                    signal_color = "#09ab3b"
-                else:
-                    signal_text = "🟡 Neutral"
-                    signal_color = "#faca2b"
-                st.markdown(
-                    f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">RSI (14)</div>'
-                    f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
-                    f'<span style="font-size:1.85rem;font-weight:700;color:{signal_color}">{signal_text}</span>'
-                    f'<span style="font-size:1.75rem">{rsi_value:.2f}</span>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.metric("RSI (14)", "N/A")
-
-        with col4:
-            if 'MACD' in df.columns and not pd.isna(df.iloc[-1]['MACD']):
-                macd_value = df.iloc[-1]['MACD']
-                if 'MACD_signal' in df.columns and not pd.isna(df.iloc[-1]['MACD_signal']):
-                    signal_val = df.iloc[-1]['MACD_signal']
-                    if macd_value > signal_val:
-                        signal_text = "🟢 Bullish"
-                        signal_color = "#09ab3b"
-                    else:
-                        signal_text = "🔴 Bearish"
-                        signal_color = "#ff2b2b"
-                else:
-                    signal_text = ""
-                    signal_color = "grey"
-                st.markdown(
-                    f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">MACD</div>'
-                    f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
-                    f'<span style="font-size:1.85rem;font-weight:700;color:{signal_color}">{signal_text}</span>'
-                    f'<span style="font-size:1.75rem;">{macd_value:.4f}</span>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.metric("MACD", "N/A")
-
-        with col5:
             # Linear regression slope over the full period as "Price Trend"
             if len(df) >= 3:
                 closes = df['Close'].values
@@ -313,6 +265,56 @@ def render_momentum_tab(ticker: str):
                 )
             else:
                 st.metric("Price Trend", "N/A")
+
+        with col4:
+            if 'RSI' in df.columns and not pd.isna(df.iloc[-1]['RSI']):
+                rsi_value = df.iloc[-1]['RSI']
+                if rsi_value > 70:
+                    signal_text = "🔴 Overbought"
+                    signal_color = "#ff2b2b"
+                elif rsi_value < 30:
+                    signal_text = "🟢 Oversold"
+                    signal_color = "#09ab3b"
+                else:
+                    signal_text = "🟡 Neutral"
+                    signal_color = "#faca2b"
+                st.markdown(
+                    f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">RSI (14)</div>'
+                    f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
+                    f'<span style="font-size:1.85rem;font-weight:700;color:{signal_color}">{signal_text}</span>'
+                    f'<span style="font-size:1.75rem">{rsi_value:.2f}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.metric("RSI (14)", "N/A")
+
+        with col5:
+            if 'MACD' in df.columns and not pd.isna(df.iloc[-1]['MACD']):
+                macd_value = df.iloc[-1]['MACD']
+                if 'MACD_signal' in df.columns and not pd.isna(df.iloc[-1]['MACD_signal']):
+                    signal_val = df.iloc[-1]['MACD_signal']
+                    if macd_value > signal_val:
+                        signal_text = "🟢 Bullish"
+                        signal_color = "#09ab3b"
+                    else:
+                        signal_text = "🔴 Bearish"
+                        signal_color = "#ff2b2b"
+                else:
+                    signal_text = ""
+                    signal_color = "grey"
+                st.markdown(
+                    f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">MACD</div>'
+                    f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
+                    f'<span style="font-size:1.85rem;font-weight:700;color:{signal_color}">{signal_text}</span>'
+                    f'<span style="font-size:1.75rem;">{macd_value:.4f}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.metric("MACD", "N/A")
+
+
         
         st.divider()
         
