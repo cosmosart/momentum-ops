@@ -24,13 +24,14 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from database.db import Database
 from ingestion.fetcher import DataFetcher
+from shared.config import to_yf_symbol
 
 load_dotenv(PROJECT_ROOT / ".env")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("backfill")
 
 
-def _bulk_upsert(db: Database, ticker: str, df: pd.DataFrame) -> int:
+def _bulk_upsert(db: Database, ticker: str, region: str, df: pd.DataFrame) -> int:
     """
     Batch-upsert daily rows inside a single transaction instead of
     committing per row.  Falls back to row-by-row on conflict errors.
@@ -41,6 +42,7 @@ def _bulk_upsert(db: Database, ticker: str, df: pd.DataFrame) -> int:
     for _, r in df.iterrows():
         rows.append((
             ticker,
+            region,
             r["Date"].date(),
             float(r["Open"]),
             float(r["High"]),
@@ -51,9 +53,10 @@ def _bulk_upsert(db: Database, ticker: str, df: pd.DataFrame) -> int:
         ))
 
     query = """
-        INSERT INTO price_daily (ticker, date, open, high, low, close, adj_close, volume)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO price_daily (ticker, region, date, open, high, low, close, adj_close, volume)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (ticker, date) DO UPDATE SET
+            region    = EXCLUDED.region,
             open      = EXCLUDED.open,
             high      = EXCLUDED.high,
             low       = EXCLUDED.low,
@@ -73,28 +76,29 @@ def _bulk_upsert(db: Database, ticker: str, df: pd.DataFrame) -> int:
         return 0
 
 
-def backfill_ticker(db: Database, ticker: str) -> int:
+def backfill_ticker(db: Database, symbol: str, region: str = "US") -> int:
     """
-    Download full history for *ticker* and upsert into the database.
+    Download full history for *symbol* and upsert into the database.
 
     Returns the number of rows inserted/updated.
     """
-    fetcher = DataFetcher(ticker)
+    yf_symbol = to_yf_symbol(symbol, region)
+    fetcher = DataFetcher(yf_symbol)
 
     # period="max" pulls everything yfinance has (often 20+ years for US equities)
     daily_data = fetcher.fetch_daily_data(period="max")
 
     if daily_data is None or daily_data.empty:
-        logger.warning("  %s — no data returned by yfinance", ticker)
+        logger.warning("  %s — no data returned by yfinance", symbol)
         return 0
 
     first_date = daily_data["Date"].iloc[0].date()
     last_date = daily_data["Date"].iloc[-1].date()
     logger.info(
-        "  %s — %d rows  [%s → %s]", ticker, len(daily_data), first_date, last_date
+        "  %s — %d rows  [%s → %s]", symbol, len(daily_data), first_date, last_date
     )
 
-    count = _bulk_upsert(db, ticker, daily_data)
+    count = _bulk_upsert(db, symbol, region, daily_data)
     return count
 
 
@@ -116,27 +120,32 @@ def main() -> None:
 
     try:
         if args.tickers:
-            tickers = [t.upper() for t in args.tickers]
-            logger.info("Backfilling %d ticker(s) from CLI args", len(tickers))
+            # CLI args are treated as yfinance-style symbols with US region default
+            ticker_entries = [
+                {"symbol": t.upper(), "region": "US"} for t in args.tickers
+            ]
+            logger.info("Backfilling %d ticker(s) from CLI args", len(ticker_entries))
         else:
-            tickers = db.get_active_tickers()
-            if not tickers:
+            ticker_entries = db.get_active_tickers()  # returns list[dict]
+            if not ticker_entries:
                 logger.warning("No active tickers found in the database.")
                 sys.exit(0)
-            logger.info("Backfilling %d active ticker(s) from database", len(tickers))
+            logger.info("Backfilling %d active ticker(s) from database", len(ticker_entries))
 
         total_rows = 0
         failed: list[str] = []
         t0 = time.perf_counter()
 
-        for i, ticker in enumerate(tickers, start=1):
-            logger.info("[%d/%d] %s", i, len(tickers), ticker)
+        for i, entry in enumerate(ticker_entries, start=1):
+            symbol = entry["symbol"]
+            region = entry["region"]
+            logger.info("[%d/%d] %s (region=%s)", i, len(ticker_entries), symbol, region)
             try:
-                count = backfill_ticker(db, ticker)
+                count = backfill_ticker(db, symbol, region)
                 total_rows += count
             except Exception as e:
-                logger.error("  %s — FAILED: %s", ticker, e)
-                failed.append(ticker)
+                logger.error("  %s — FAILED: %s", symbol, e)
+                failed.append(symbol)
                 # Ensure the connection is still usable for the next ticker
                 if db.conn and not db.conn.closed:
                     db.conn.rollback()
@@ -148,7 +157,7 @@ def main() -> None:
         logger.info(
             "Backfill complete — %d rows across %d tickers in %.1fs",
             total_rows,
-            len(tickers) - len(failed),
+            len(ticker_entries) - len(failed),
             elapsed,
         )
         if failed:

@@ -23,6 +23,7 @@ from database.db import Database
 from ingestion.fetcher import DataFetcher
 from models.models import calculate_indicators, FourModelPredictor
 from models.features import engineer_features
+from shared.config import to_yf_symbol
 
 load_dotenv()
 
@@ -71,7 +72,7 @@ class DataScheduler:
             return None
         return float(value)
 
-    def _bulk_upsert_daily(self, ticker: str, df: pd.DataFrame) -> int:
+    def _bulk_upsert_daily(self, ticker: str, region: str, df: pd.DataFrame) -> int:
         """
         Batch-upsert daily rows in a single transaction.
 
@@ -80,6 +81,7 @@ class DataScheduler:
         rows = [
             (
                 ticker,
+                region,
                 r["Date"].date(),
                 float(r["Open"]),
                 float(r["High"]),
@@ -92,9 +94,10 @@ class DataScheduler:
         ]
         query = """
             INSERT INTO price_daily
-                (ticker, date, open, high, low, close, adj_close, volume)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                (ticker, region, date, open, high, low, close, adj_close, volume)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (ticker, date) DO UPDATE SET
+                region    = EXCLUDED.region,
                 open      = EXCLUDED.open,
                 high      = EXCLUDED.high,
                 low       = EXCLUDED.low,
@@ -117,7 +120,7 @@ class DataScheduler:
     # Backfill
     # ------------------------------------------------------------------
 
-    def _backfill_if_needed(self, ticker: str) -> None:
+    def _backfill_if_needed(self, ticker: str, region: str, yf_symbol: str) -> None:
         """
         Check the DB row count for *ticker*.  If it is below
         ``MIN_HISTORY_ROWS``, download the maximum available history
@@ -131,14 +134,14 @@ class DataScheduler:
             "  %s has only %d rows (need %d) — backfilling max history …",
             ticker, existing, MIN_HISTORY_ROWS,
         )
-        fetcher = DataFetcher(ticker)
+        fetcher = DataFetcher(yf_symbol)
         full_history = fetcher.fetch_daily_data(period="max")
 
         if full_history is None or full_history.empty:
             logger.warning("  %s — yfinance returned no data for period='max'", ticker)
             return
 
-        count = self._bulk_upsert_daily(ticker, full_history)
+        count = self._bulk_upsert_daily(ticker, region, full_history)
         logger.info(
             "  %s backfill complete — %d rows  [%s → %s]",
             ticker,
@@ -151,15 +154,17 @@ class DataScheduler:
     # Per-ticker update
     # ------------------------------------------------------------------
 
-    def update_data(self, ticker: str):
+    def update_data(self, ticker: str, region: str = "US"):
         """
         Update data for a single ticker: ingest prices, compute indicators,
         run XGBoost inference, and persist results.
         
         Args:
-            ticker: Stock ticker symbol
+            ticker: Raw stock ticker symbol (no yfinance suffix)
+            region: Market region code (US, KR, JP, GLOBAL)
         """
-        logger.info(f"Updating data for {ticker}")
+        yf_symbol = to_yf_symbol(ticker, region)
+        logger.info(f"Updating data for {ticker} (yf={yf_symbol})")
         
         try:
             if not self._ensure_db():
@@ -167,10 +172,10 @@ class DataScheduler:
                 return
 
             # ── Backfill if this ticker is new or has sparse data ─────
-            self._backfill_if_needed(ticker)
+            self._backfill_if_needed(ticker, region, yf_symbol)
 
             # ── Incremental fetch (last 3 months) ────────────────────
-            fetcher = DataFetcher(ticker)
+            fetcher = DataFetcher(yf_symbol)
 
             # Fetch and store realtime data
             realtime_data = fetcher.fetch_realtime_data()
@@ -190,7 +195,7 @@ class DataScheduler:
             daily_data = fetcher.fetch_daily_data(period="3mo")
             if daily_data is not None and not daily_data.empty:
                 # Upsert last 3 months (fast — small batch)
-                self._bulk_upsert_daily(ticker, daily_data)
+                self._bulk_upsert_daily(ticker, region, daily_data)
 
                 # ── Feature engineering (shared with training) ────────
                 features = engineer_features(daily_data)
@@ -252,14 +257,14 @@ class DataScheduler:
             return
         
         # dynamic_tickers will contain ONLY the rows where is_active = true
-        dynamic_tickers = self.db.get_active_tickers()
+        dynamic_tickers = self.db.get_active_tickers()  # list[dict]
         
         if not dynamic_tickers:
             logger.warning("No active tickers found in database.")
             return
 
-        for ticker in dynamic_tickers:
-            self.update_data(ticker)
+        for t in dynamic_tickers:
+            self.update_data(t["symbol"], t["region"])
             
     def start(self):
         """Start the scheduler."""

@@ -22,12 +22,14 @@ def render_momentum_tab(ticker: str):
     Render the momentum analysis tab.
     
     Args:
-        ticker: Stock ticker symbol
+        ticker: Raw stock ticker symbol (no yfinance suffix)
     """
+    yf_symbol = st.session_state.get("yf_symbol", ticker)
+
     # Get company name
     import yfinance as yf
     try:
-        ticker_obj = yf.Ticker(ticker)
+        ticker_obj = yf.Ticker(yf_symbol)
         company_name = ticker_obj.info.get('longName', ticker_obj.info.get('shortName', ticker))
     except:
         company_name = ticker
@@ -155,7 +157,7 @@ def render_momentum_tab(ticker: str):
     import yfinance as yf
     
     try:
-        ticker_obj = yf.Ticker(ticker)
+        ticker_obj = yf.Ticker(yf_symbol)
         
         # Use custom date range if selected, otherwise use period
         if period == "Custom Range" and start_date and end_date:
@@ -205,7 +207,7 @@ def render_momentum_tab(ticker: str):
         
         with col1:
             current_price = df.iloc[-1]['Close']
-            st.metric("Current Price", format_price(current_price, ticker))
+            st.metric("Current Price", format_price(current_price, yf_symbol))
         
         with col2:
             if 'RSI' in df.columns and not pd.isna(df.iloc[-1]['RSI']):
@@ -228,9 +230,9 @@ def render_momentum_tab(ticker: str):
                 if prev_close != 0:
                     price_change_pct = (price_change / prev_close) * 100
                     change_label = f"{timeframe} Change"
-                    st.metric(change_label, f"{price_change_pct:.2f}%", format_price_change(price_change, ticker))
+                    st.metric(change_label, f"{price_change_pct:.2f}%", format_price_change(price_change, yf_symbol))
                 else:
-                    st.metric(f"{timeframe} Change", "N/A", format_price_change(price_change, ticker))
+                    st.metric(f"{timeframe} Change", "N/A", format_price_change(price_change, yf_symbol))
             else:
                 st.metric(f"{timeframe} Change", "N/A")
         
@@ -351,7 +353,7 @@ def render_momentum_tab(ticker: str):
                     line_color="green",
                     line_width=2,
                     opacity=max(opacity, 0.3),
-                    annotation_text=f"S{i}: {format_price(support, ticker)}",
+                    annotation_text=f"S{i}: {format_price(support, yf_symbol)}",
                     annotation_position="right",
                     row=1, col=1
                 )
@@ -365,7 +367,7 @@ def render_momentum_tab(ticker: str):
                     line_color="red",
                     line_width=2,
                     opacity=max(opacity, 0.3),
-                    annotation_text=f"R{i}: {format_price(resistance, ticker)}",
+                    annotation_text=f"R{i}: {format_price(resistance, yf_symbol)}",
                     annotation_position="right",
                     row=1, col=1
                 )
@@ -403,7 +405,7 @@ def render_momentum_tab(ticker: str):
             hovermode='x unified'
         )
         
-        fig.update_yaxes(title_text=f"Price ({get_currency_info(ticker)[0]})", row=1, col=1)
+        fig.update_yaxes(title_text=f"Price ({get_currency_info(yf_symbol)[0]})", row=1, col=1)
         fig.update_yaxes(title_text="RSI", row=2, col=1)
         fig.update_yaxes(title_text="MACD", row=3, col=1)
         

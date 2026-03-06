@@ -148,6 +148,7 @@ def load_from_database() -> pd.DataFrame:
         query = """
             SELECT
                 pd.ticker,
+                pd.region,
                 pd.date,
                 pd.open   AS "Open",
                 pd.high   AS "High",

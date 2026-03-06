@@ -111,12 +111,13 @@ class Database:
     
     def insert_daily_price(self, ticker: str, date_val: date, 
                           open_price: float, high: float, low: float, 
-                          close: float, adj_close: float, volume: int):
+                          close: float, adj_close: float, volume: int,
+                          region: str = "US"):
         """
         Insert daily price data.
         
         Args:
-            ticker: Stock ticker symbol
+            ticker: Raw stock ticker symbol
             date_val: Price date
             open_price: Opening price
             high: High price
@@ -124,11 +125,13 @@ class Database:
             close: Closing price
             adj_close: Adjusted closing price
             volume: Trading volume
+            region: Market region code (US, KR, JP, GLOBAL)
         """
         query = """
-        INSERT INTO price_daily (ticker, date, open, high, low, close, adj_close, volume)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO price_daily (ticker, region, date, open, high, low, close, adj_close, volume)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (ticker, date) DO UPDATE SET
+            region = EXCLUDED.region,
             open = EXCLUDED.open,
             high = EXCLUDED.high,
             low = EXCLUDED.low,
@@ -138,7 +141,7 @@ class Database:
         """
         try:
             with self.conn.cursor() as cursor:
-                cursor.execute(query, (ticker, date_val, open_price, high, low, close, adj_close, volume))
+                cursor.execute(query, (ticker, region, date_val, open_price, high, low, close, adj_close, volume))
                 self.conn.commit()
         except Exception as e:
             logger.error(f"Failed to insert daily price: {e}")

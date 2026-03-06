@@ -40,6 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_price_realtime_timestamp ON price_realtime(timest
 CREATE TABLE IF NOT EXISTS price_daily (
     id         SERIAL PRIMARY KEY,
     ticker     VARCHAR(20) NOT NULL REFERENCES tickers(symbol) ON DELETE CASCADE,
+    region     VARCHAR(10) NOT NULL DEFAULT 'US',
     date       DATE NOT NULL,
     open       DECIMAL(12, 4),
     high       DECIMAL(12, 4),
@@ -53,6 +54,7 @@ CREATE TABLE IF NOT EXISTS price_daily (
 
 CREATE INDEX IF NOT EXISTS idx_price_daily_ticker ON price_daily(ticker);
 CREATE INDEX IF NOT EXISTS idx_price_daily_date   ON price_daily(date);
+CREATE INDEX IF NOT EXISTS idx_price_daily_region ON price_daily(region);
 
 -- 3. FUNDAMENTAL / SENTIMENT ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS fundamental_daily (

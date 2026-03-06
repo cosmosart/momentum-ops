@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from database.db import Database
 from ingestion.fetcher import DataFetcher
+from shared.config import to_yf_symbol
 from dotenv import load_dotenv
 
 # Load environment
@@ -65,7 +66,9 @@ def initialize_database():
 def initial_data_fetch():
     """Perform initial data fetch for default ticker."""
     ticker = os.getenv('DEFAULT_TICKER', 'AAPL')
-    logger.info(f"Fetching initial data for {ticker}...")
+    region = os.getenv('DEFAULT_TICKER_REGION', 'US')
+    yf_symbol = to_yf_symbol(ticker, region)
+    logger.info(f"Fetching initial data for {ticker} (region={region}, yf={yf_symbol})...")
     
     db = Database()
     
@@ -86,7 +89,7 @@ def initial_data_fetch():
         return
     
     try:
-        fetcher = DataFetcher(ticker)
+        fetcher = DataFetcher(yf_symbol)
         
         # Fetch daily data
         daily_data = fetcher.fetch_daily_data(period="1y")
@@ -101,7 +104,8 @@ def initial_data_fetch():
                     low=float(row['Low']),
                     close=float(row['Close']),
                     adj_close=float(row['Close']),
-                    volume=int(row['Volume'])
+                    volume=int(row['Volume']),
+                    region=region
                 )
             logger.info(f"Successfully loaded {len(daily_data)} days of data for {ticker}")
         else:

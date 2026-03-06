@@ -2,11 +2,12 @@
 """
 CLI tool for managing tickers.
 Usage:
-    python manage_tickers.py list              # List all tickers
-    python manage_tickers.py add AAPL          # Add a ticker
-    python manage_tickers.py add AAPL 1542.T   # Add multiple tickers
-    python manage_tickers.py remove AAPL       # Deactivate a ticker
-    python manage_tickers.py activate AAPL     # Reactivate a ticker
+    python manage_tickers.py list                        # List all tickers
+    python manage_tickers.py add AAPL                    # Add a US ticker
+    python manage_tickers.py add 069500 --region KR      # Add a Korean ticker
+    python manage_tickers.py add AAPL GOOGL MSFT         # Add multiple US tickers
+    python manage_tickers.py remove AAPL                 # Deactivate a ticker
+    python manage_tickers.py activate AAPL               # Reactivate a ticker
 """
 
 import sys
@@ -22,26 +23,29 @@ def list_tickers():
         return 1
     
     try:
-        all_tickers = db.get_all_tickers()
-        active_tickers = db.get_active_tickers()
+        all_tickers = db.get_all_tickers()      # list[dict]
+        active_tickers = db.get_active_tickers() # list[dict]
+        active_symbols = {t["symbol"] for t in active_tickers}
         
         if not all_tickers:
             print("No tickers configured.")
             return 0
         
         print("\n📋 Ticker List:")
-        print("=" * 50)
-        for ticker in all_tickers:
-            status = "✅ Active" if ticker in active_tickers else "🔴 Inactive"
-            print(f"  {ticker:<15} {status}")
-        print("=" * 50)
-        print(f"\nTotal: {len(all_tickers)} tickers ({len(active_tickers)} active, {len(all_tickers) - len(active_tickers)} inactive)")
+        print("=" * 60)
+        for t in all_tickers:
+            symbol = t["symbol"]
+            region = t["region"]
+            status = "✅ Active" if symbol in active_symbols else "🔴 Inactive"
+            print(f"  {symbol:<15} {region:<8} {status}")
+        print("=" * 60)
+        print(f"\nTotal: {len(all_tickers)} tickers ({len(active_symbols)} active, {len(all_tickers) - len(active_symbols)} inactive)")
         return 0
     finally:
         db.close()
 
 
-def add_tickers(ticker_list):
+def add_tickers(ticker_list, region="US"):
     """Add one or more tickers."""
     db = Database()
     if not db.connect():
@@ -51,8 +55,8 @@ def add_tickers(ticker_list):
     try:
         for ticker in ticker_list:
             ticker = ticker.upper().strip()
-            db.add_ticker(ticker)
-            print(f"✅ Added/Activated ticker: {ticker}")
+            db.add_ticker(ticker, region=region)
+            print(f"✅ Added/Activated ticker: {ticker} (region={region})")
         return 0
     finally:
         db.close()
@@ -82,12 +86,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s list                    # List all tickers
-  %(prog)s add AAPL                # Add AAPL
-  %(prog)s add AAPL GOOGL MSFT     # Add multiple tickers
-  %(prog)s add 1542.T              # Add Japanese stock
-  %(prog)s remove AAPL             # Deactivate AAPL
-  %(prog)s activate AAPL           # Reactivate AAPL
+  %(prog)s list                            # List all tickers
+  %(prog)s add AAPL                        # Add AAPL (US)
+  %(prog)s add AAPL GOOGL MSFT             # Add multiple US tickers
+  %(prog)s add 069500 --region KR          # Add Korean stock
+  %(prog)s add 7203 --region JP            # Add Japanese stock
+  %(prog)s remove AAPL                     # Deactivate AAPL
+  %(prog)s activate AAPL                   # Reactivate AAPL
         """
     )
     
@@ -99,6 +104,8 @@ Examples:
     # Add command
     add_parser = subparsers.add_parser('add', help='Add one or more tickers')
     add_parser.add_argument('tickers', nargs='+', help='Ticker symbol(s) to add')
+    add_parser.add_argument('--region', default='US', choices=['US', 'KR', 'JP', 'GLOBAL'],
+                            help='Market region (default: US)')
     
     # Remove command
     remove_parser = subparsers.add_parser('remove', help='Deactivate one or more tickers')
@@ -116,7 +123,9 @@ Examples:
     
     if args.command == 'list':
         return list_tickers()
-    elif args.command == 'add' or args.command == 'activate':
+    elif args.command == 'add':
+        return add_tickers(args.tickers, region=args.region)
+    elif args.command == 'activate':
         return add_tickers(args.tickers)
     elif args.command == 'remove':
         return remove_tickers(args.tickers)

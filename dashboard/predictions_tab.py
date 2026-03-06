@@ -167,12 +167,14 @@ def render_predictions_tab(ticker: str):
     Render the predictions tab with strategy and horizon selectors.
 
     Args:
-        ticker: Stock ticker symbol
+        ticker: Raw stock ticker symbol (no yfinance suffix)
     """
+    yf_symbol = st.session_state.get("yf_symbol", ticker)
+
     # Get company name
     import yfinance as yf
     try:
-        ticker_obj = yf.Ticker(ticker)
+        ticker_obj = yf.Ticker(yf_symbol)
         company_name = ticker_obj.info.get("longName", ticker_obj.info.get("shortName", ticker))
     except Exception:
         company_name = ticker
@@ -202,7 +204,7 @@ def render_predictions_tab(ticker: str):
         df_prices["close"] = df_prices["close"].astype(float)
         current_price = df_prices.iloc[0]["close"]
 
-        st.metric("Current Price", format_price(current_price, ticker))
+        st.metric("Current Price", format_price(current_price, yf_symbol))
 
         # ------------------------------------------------------------------
         # Model selector — exactly four choices
@@ -372,17 +374,17 @@ def render_predictions_tab(ticker: str):
             b1, b2, b3, b4 = st.columns(4)
             with b1:
                 if bb_up is not None:
-                    st.metric("Bollinger Bands Upper", format_price(bb_up, ticker))
+                    st.metric("Bollinger Bands Upper", format_price(bb_up, yf_symbol))
                 else:
                     st.metric("Bollinger Bands Upper", "N/A")
             with b2:
                 if bb_mid is not None:
-                    st.metric("Bollinger Bands Middle", format_price(bb_mid, ticker))
+                    st.metric("Bollinger Bands Middle", format_price(bb_mid, yf_symbol))
                 else:
                     st.metric("Bollinger Bands Middle", "N/A")
             with b3:
                 if bb_lo is not None:
-                    st.metric("Bollinger Bands Lower", format_price(bb_lo, ticker))
+                    st.metric("Bollinger Bands Lower", format_price(bb_lo, yf_symbol))
                 else:
                     st.metric("Bollinger Bands Lower", "N/A")
             with b4:

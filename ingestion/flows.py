@@ -115,16 +115,17 @@ def fetch_yfinance_realtime(yf_symbol: str) -> dict[str, Any] | None:
     retry_delay_seconds=10,
     description="Batch-upsert daily OHLCV rows into price_daily.",
 )
-def upsert_daily_prices(ticker: str, df: pd.DataFrame) -> int:
+def upsert_daily_prices(ticker: str, region: str, df: pd.DataFrame) -> int:
     """
     Batch-upsert daily price rows in a single transaction.
 
     Returns the number of rows written.
     """
     log = get_run_logger()
-    rows: list[tuple[str, date, float, float, float, float, float, int]] = [
+    rows: list[tuple[str, str, date, float, float, float, float, float, int]] = [
         (
             ticker,
+            region,
             r["Date"].date(),
             float(r["Open"]),
             float(r["High"]),
@@ -137,9 +138,10 @@ def upsert_daily_prices(ticker: str, df: pd.DataFrame) -> int:
     ]
     query = """
         INSERT INTO price_daily
-            (ticker, date, open, high, low, close, adj_close, volume)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (ticker, region, date, open, high, low, close, adj_close, volume)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (ticker, date) DO UPDATE SET
+            region    = EXCLUDED.region,
             open      = EXCLUDED.open,
             high      = EXCLUDED.high,
             low       = EXCLUDED.low,
@@ -196,7 +198,7 @@ def upsert_realtime_price(data: dict[str, Any]) -> None:
     retry_delay_seconds=30,
     description="Check row count; if below threshold, fetch max history and upsert.",
 )
-def backfill_if_needed(ticker: str, yf_symbol: str) -> None:
+def backfill_if_needed(ticker: str, region: str, yf_symbol: str) -> None:
     """
     Backfill a ticker's price history when the DB has fewer than
     ``MIN_HISTORY_ROWS`` daily rows.
@@ -222,7 +224,7 @@ def backfill_if_needed(ticker: str, yf_symbol: str) -> None:
     )
     full_df = fetch_yfinance_daily.fn(yf_symbol, period="max")  # direct call, no Prefect wrapper
     if full_df is not None and not full_df.empty:
-        upsert_daily_prices.fn(ticker, full_df)
+        upsert_daily_prices.fn(ticker, region, full_df)
 
 
 def _safe_float(value: Any) -> float | None:
@@ -345,12 +347,12 @@ def process_single_ticker(ticker: str, region: str, include_realtime: bool = Tru
     log.info("Processing %s (yf: %s)", ticker, yf_sym)
 
     # 1. Backfill sparse tickers
-    backfill_if_needed(ticker, yf_sym)
+    backfill_if_needed(ticker, region, yf_sym)
 
     # 2. Incremental daily fetch (last 3 months)
     daily_df = fetch_yfinance_daily(yf_sym, period="3mo")
     if daily_df is not None and not daily_df.empty:
-        upsert_daily_prices(ticker, daily_df)
+        upsert_daily_prices(ticker, region, daily_df)
         run_inference_and_persist(ticker, daily_df)
 
     # 3. Realtime snapshot (optional — only during trading hours)

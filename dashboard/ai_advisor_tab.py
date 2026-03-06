@@ -95,8 +95,10 @@ def render_ai_advisor_tab(ticker: str):
     """Render the AI Advisor export page."""
     import yfinance as yf
 
+    yf_symbol = st.session_state.get("yf_symbol", ticker)
+
     try:
-        ticker_obj = yf.Ticker(ticker)
+        ticker_obj = yf.Ticker(yf_symbol)
         company_name = ticker_obj.info.get(
             "longName", ticker_obj.info.get("shortName", ticker)
         )
@@ -142,7 +144,7 @@ def render_ai_advisor_tab(ticker: str):
         analysis = analysis_data[0]
 
         # -- Summary metrics -----------------------------------------------
-        st.metric("Current Price", format_price(current_price, ticker))
+        st.metric("Current Price", format_price(current_price, yf_symbol))
         st.caption(f"Analysis date: {analysis.get('date', 'N/A')}")
         st.divider()
 
