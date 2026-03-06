@@ -251,8 +251,8 @@ def render_momentum_tab(ticker: str):
                 st.markdown(
                     f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">RSI (14)</div>'
                     f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
-                    f'<span style="font-size:1.75rem">{rsi_value:.2f}</span>'
                     f'<span style="font-size:1.85rem;font-weight:700;color:{signal_color}">{signal_text}</span>'
+                    f'<span style="font-size:1.75rem">{rsi_value:.2f}</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
@@ -276,8 +276,8 @@ def render_momentum_tab(ticker: str):
                 st.markdown(
                     f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">MACD</div>'
                     f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
-                    f'<span style="font-size:1.75rem;">{macd_value:.4f}</span>'
                     f'<span style="font-size:1.85rem;font-weight:700;color:{signal_color}">{signal_text}</span>'
+                    f'<span style="font-size:1.75rem;">{macd_value:.4f}</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
