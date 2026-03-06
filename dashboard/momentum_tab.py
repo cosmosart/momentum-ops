@@ -220,10 +220,19 @@ def render_momentum_tab(ticker: str):
                     price_change_pct = (price_change / prev_close) * 100
                     change_label = f"{timeframe} Change"
                     price_change_str = format_price_change(price_change, yf_symbol)
-                    st.metric(change_label, f"{price_change_pct:.2f}%  {price_change_str}")
+                    arrow = "▲" if price_change >= 0 else "▼"
+                    color = "#09ab3b" if price_change >= 0 else "#ff2b2b"
+                    st.markdown(
+                        f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">{change_label}</div>'
+                        f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
+                        f'<span style="font-size:1.75rem;font-weight:700">{price_change_pct:.2f}%</span>'
+                        f'<span style="font-size:0.875rem;color:{color}">{arrow} {price_change_str}</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
                 else:
                     price_change_str = format_price_change(price_change, yf_symbol)
-                    st.metric(f"{timeframe} Change", f"N/A  {price_change_str}")
+                    st.metric(f"{timeframe} Change", "N/A", price_change_str)
             else:
                 st.metric(f"{timeframe} Change", "N/A")
 
