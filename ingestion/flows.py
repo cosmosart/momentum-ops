@@ -27,7 +27,7 @@ from prefect.tasks import task_input_hash
 from ingestion.fetcher import DataFetcher
 from models.features import engineer_features
 from models.models import FourModelPredictor, calculate_indicators
-from shared.config import settings
+from shared.config import settings, to_yf_symbol
 from shared.database import get_connection
 
 logger = logging.getLogger(__name__)
@@ -47,14 +47,14 @@ MIN_HISTORY_ROWS: int = settings.min_history_rows
     retry_delay_seconds=10,
     description="Query the tickers table for all rows with is_active = true.",
 )
-def fetch_active_tickers() -> list[str]:
-    """Return a list of active ticker symbols from the database."""
+def fetch_active_tickers() -> list[dict[str, str]]:
+    """Return a list of active ticker dicts ({'symbol', 'region'}) from the database."""
     log = get_run_logger()
-    query = "SELECT symbol FROM tickers WHERE is_active = true ORDER BY symbol"
+    query = "SELECT symbol, market_region FROM tickers WHERE is_active = true ORDER BY symbol"
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(query)
-            tickers = [row["symbol"] for row in cur.fetchall()]
+            tickers = [{"symbol": row["symbol"], "region": row["market_region"]} for row in cur.fetchall()]
     log.info("Active tickers: %d found", len(tickers))
     return tickers
 
@@ -67,14 +67,14 @@ def fetch_active_tickers() -> list[str]:
     cache_expiration=pd.Timedelta(hours=1),
     description="Download daily OHLCV data for a single ticker via yfinance.",
 )
-def fetch_yfinance_daily(ticker: str, period: str = "3mo") -> pd.DataFrame | None:
+def fetch_yfinance_daily(yf_symbol: str, period: str = "3mo") -> pd.DataFrame | None:
     """
     Fetch daily historical data from yfinance.
 
     Parameters
     ----------
-    ticker : str
-        Stock symbol (e.g. ``"AAPL"``, ``"005930.KS"``).
+    yf_symbol : str
+        yfinance-compatible symbol (e.g. ``"AAPL"``, ``"069500.KS"``).
     period : str
         yfinance period string (``"3mo"``, ``"max"``, etc.).
 
@@ -84,12 +84,12 @@ def fetch_yfinance_daily(ticker: str, period: str = "3mo") -> pd.DataFrame | Non
         DataFrame with OHLCV columns, or ``None`` on failure.
     """
     log = get_run_logger()
-    fetcher = DataFetcher(ticker)
+    fetcher = DataFetcher(yf_symbol)
     df = fetcher.fetch_daily_data(period=period)
     if df is None or df.empty:
-        log.warning("No daily data returned for %s (period=%s)", ticker, period)
+        log.warning("No daily data returned for %s (period=%s)", yf_symbol, period)
         return None
-    log.info("%s — fetched %d daily rows (%s → %s)", ticker, len(df), df["Date"].iloc[0].date(), df["Date"].iloc[-1].date())
+    log.info("%s — fetched %d daily rows (%s → %s)", yf_symbol, len(df), df["Date"].iloc[0].date(), df["Date"].iloc[-1].date())
     return df
 
 
@@ -99,13 +99,13 @@ def fetch_yfinance_daily(ticker: str, period: str = "3mo") -> pd.DataFrame | Non
     retry_delay_seconds=15,
     description="Fetch latest 1-min bar from yfinance.",
 )
-def fetch_yfinance_realtime(ticker: str) -> dict[str, Any] | None:
-    """Fetch realtime (1-min) price snapshot for *ticker*."""
+def fetch_yfinance_realtime(yf_symbol: str) -> dict[str, Any] | None:
+    """Fetch realtime (1-min) price snapshot for *yf_symbol*."""
     log = get_run_logger()
-    fetcher = DataFetcher(ticker)
+    fetcher = DataFetcher(yf_symbol)
     data = fetcher.fetch_realtime_data()
     if data is None:
-        log.warning("No realtime data for %s", ticker)
+        log.warning("No realtime data for %s", yf_symbol)
     return data
 
 
@@ -196,7 +196,7 @@ def upsert_realtime_price(data: dict[str, Any]) -> None:
     retry_delay_seconds=30,
     description="Check row count; if below threshold, fetch max history and upsert.",
 )
-def backfill_if_needed(ticker: str) -> None:
+def backfill_if_needed(ticker: str, yf_symbol: str) -> None:
     """
     Backfill a ticker's price history when the DB has fewer than
     ``MIN_HISTORY_ROWS`` daily rows.
@@ -220,7 +220,7 @@ def backfill_if_needed(ticker: str) -> None:
         existing,
         MIN_HISTORY_ROWS,
     )
-    full_df = fetch_yfinance_daily.fn(ticker, period="max")  # direct call, no Prefect wrapper
+    full_df = fetch_yfinance_daily.fn(yf_symbol, period="max")  # direct call, no Prefect wrapper
     if full_df is not None and not full_df.empty:
         upsert_daily_prices.fn(ticker, full_df)
 
@@ -335,27 +335,30 @@ def run_inference_and_persist(ticker: str, daily_df: pd.DataFrame) -> None:
     retries=1,
     retry_delay_seconds=30,
 )
-def process_single_ticker(ticker: str, include_realtime: bool = True) -> None:
+def process_single_ticker(ticker: str, region: str, include_realtime: bool = True) -> None:
     """
     End-to-end processing for one ticker:
     backfill → fetch daily → upsert → realtime → inference.
     """
     log = get_run_logger()
-    log.info("Processing %s", ticker)
+    yf_sym = to_yf_symbol(ticker, region)
+    log.info("Processing %s (yf: %s)", ticker, yf_sym)
 
     # 1. Backfill sparse tickers
-    backfill_if_needed(ticker)
+    backfill_if_needed(ticker, yf_sym)
 
     # 2. Incremental daily fetch (last 3 months)
-    daily_df = fetch_yfinance_daily(ticker, period="3mo")
+    daily_df = fetch_yfinance_daily(yf_sym, period="3mo")
     if daily_df is not None and not daily_df.empty:
         upsert_daily_prices(ticker, daily_df)
         run_inference_and_persist(ticker, daily_df)
 
     # 3. Realtime snapshot (optional — only during trading hours)
     if include_realtime:
-        rt_data = fetch_yfinance_realtime(ticker)
+        rt_data = fetch_yfinance_realtime(yf_sym)
         if rt_data is not None:
+            # Override the ticker key so DB stores the raw symbol
+            rt_data["ticker"] = ticker
             upsert_realtime_price(rt_data)
 
 
@@ -381,8 +384,8 @@ def krx_realtime_flow() -> None:
         return
 
     log.info("KRX realtime cycle — %d tickers", len(tickers))
-    for ticker in tickers:
-        process_single_ticker(ticker, include_realtime=True)
+    for t in tickers:
+        process_single_ticker(t["symbol"], t["region"], include_realtime=True)
     log.info("KRX realtime cycle complete")
 
 
@@ -403,8 +406,8 @@ def daily_batch_flow() -> None:
         return
 
     log.info("Daily batch cycle — %d tickers", len(tickers))
-    for ticker in tickers:
-        process_single_ticker(ticker, include_realtime=False)
+    for t in tickers:
+        process_single_ticker(t["symbol"], t["region"], include_realtime=False)
     log.info("Daily batch cycle complete")
 
 

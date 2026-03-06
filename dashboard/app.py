@@ -25,7 +25,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parent.parent)
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from shared.config import settings  # noqa: E402
+from shared.config import settings, to_yf_symbol  # noqa: E402
 from shared.database import check_health  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,8 @@ def render_sidebar() -> str:
         st.header("Configuration")
 
         # ── Ticker selection ──────────────────────────────────────────────
-        ticker_list: list[str] = _load_ticker_list()
+        ticker_map: dict[str, str] = _load_ticker_map()  # {symbol: region}
+        ticker_list = list(ticker_map.keys())
         default_ticker: str = settings.default_ticker
 
         if ticker_list:
@@ -79,10 +80,14 @@ def render_sidebar() -> str:
             ticker = st.text_input(
                 "Stock Ticker",
                 value=default_ticker,
-                help="Enter a stock ticker symbol (e.g. AAPL, 005930.KS)",
+                help="Enter a stock ticker symbol (e.g. AAPL, 069500)",
             ).upper()
 
         st.session_state["ticker"] = ticker
+        # Store region so dashboard pages can build the yfinance symbol
+        region = ticker_map.get(ticker, "US")
+        st.session_state["ticker_region"] = region
+        st.session_state["yf_symbol"] = to_yf_symbol(ticker, region)
 
         st.divider()
 
@@ -110,18 +115,18 @@ def render_sidebar() -> str:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def _load_ticker_list() -> list[str]:
-    """Fetch all ticker symbols from the database (cached 5 min)."""
+def _load_ticker_map() -> dict[str, str]:
+    """Fetch {symbol: region} mapping from the database (cached 5 min)."""
     try:
         from shared.database import get_connection
 
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT symbol FROM tickers ORDER BY symbol")
-                return [row["symbol"] for row in cur.fetchall()]
+                cur.execute("SELECT symbol, market_region FROM tickers WHERE is_active = TRUE ORDER BY symbol")
+                return {row["symbol"]: row["market_region"] for row in cur.fetchall()}
     except Exception:
-        logger.warning("Could not load tickers from DB — falling back to empty list")
-        return []
+        logger.warning("Could not load tickers from DB — falling back to empty map")
+        return {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

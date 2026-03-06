@@ -91,3 +91,33 @@ def get_settings() -> Settings:
 
 # Convenience alias for direct imports:  ``from shared.config import settings``
 settings: Settings = get_settings()
+
+
+# ── yfinance symbol mapping ───────────────────────────────────────────────────
+
+# Region → yfinance suffix.  US tickers have no suffix.
+_YF_SUFFIX: dict[str, str] = {
+    "KR": ".KS",
+    "JP": ".T",
+    "US": "",
+    "GLOBAL": "",
+}
+
+
+def to_yf_symbol(symbol: str, region: str) -> str:
+    """Convert a stored (symbol, region) pair to a yfinance-compatible ticker.
+
+    Examples
+    --------
+    >>> to_yf_symbol("069500", "KR")
+    '069500.KS'
+    >>> to_yf_symbol("AAPL", "US")
+    'AAPL'
+    >>> to_yf_symbol("7203", "JP")
+    '7203.T'
+    """
+    suffix = _YF_SUFFIX.get(region.upper(), "")
+    # If the symbol already contains the suffix, don't double-append.
+    if suffix and not symbol.upper().endswith(suffix):
+        return f"{symbol}{suffix}"
+    return symbol

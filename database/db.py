@@ -287,25 +287,30 @@ class Database:
             logger.error(f"Failed to get analysis: {e}")
             return []
 
-    def get_active_tickers(self) -> List[str]:
-        """Fetch all tickers marked as active."""
-        query = "SELECT symbol FROM tickers WHERE is_active = true ORDER BY symbol"
+    def get_active_tickers(self) -> List[Dict[str, str]]:
+        """Fetch all tickers marked as active.
+
+        Returns a list of dicts: [{'symbol': '069500', 'region': 'KR'}, ...]
+        """
+        query = "SELECT symbol, market_region FROM tickers WHERE is_active = true ORDER BY symbol"
         try:
             with self.conn.cursor() as cursor:
                 cursor.execute(query)
-                # Return a simple list like ['AAPL', '1542.T']
-                return [row[0] for row in cursor.fetchall()]
+                return [{'symbol': row[0], 'region': row[1]} for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Failed to fetch active tickers: {e}")
             return []
 
-    def get_all_tickers(self) -> List[str]:
-        """Fetch all tickers from the database."""
-        query = "SELECT symbol FROM tickers ORDER BY symbol"
+    def get_all_tickers(self) -> List[Dict[str, str]]:
+        """Fetch all tickers from the database.
+
+        Returns a list of dicts: [{'symbol': '069500', 'region': 'KR'}, ...]
+        """
+        query = "SELECT symbol, market_region FROM tickers ORDER BY symbol"
         try:
             with self.conn.cursor() as cursor:
                 cursor.execute(query)
-                return [row[0] for row in cursor.fetchall()]
+                return [{'symbol': row[0], 'region': row[1]} for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Failed to fetch all tickers: {e}")
             return []
