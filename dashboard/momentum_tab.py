@@ -423,7 +423,16 @@ def render_momentum_tab(ticker: str):
                 go.Scatter(x=x_idx, y=df['MACD_signal'], name='Signal', line=dict(color='orange')),
                 row=3, col=1
             )
-            hist_colors = ['#26a69a' if v >= 0 else '#ef5350' for v in df['MACD_hist']]
+            hist_vals = df['MACD_hist'].values
+            max_abs = max(abs(hist_vals.min()), abs(hist_vals.max())) if len(hist_vals) > 0 else 1
+            if max_abs == 0:
+                max_abs = 1
+            # Gradient: lighter near center, fully saturated at extremes
+            hist_colors = [
+                f'rgba(38,166,154,{0.25 + 0.75 * abs(v) / max_abs})' if v >= 0
+                else f'rgba(239,83,80,{0.25 + 0.75 * abs(v) / max_abs})'
+                for v in hist_vals
+            ]
             fig.add_trace(
                 go.Bar(x=x_idx, y=df['MACD_hist'], name='Histogram', marker_color=hist_colors),
                 row=3, col=1
@@ -437,17 +446,16 @@ def render_momentum_tab(ticker: str):
             hovermode='x unified'
         )
         
-        # Apply categorical tick labels on the bottom x-axis (row 3)
-        # All rows share x-axes, so setting on xaxis3 propagates upward.
+        # Apply categorical tick labels on the price chart (row 1)
         fig.update_xaxes(
             tickvals=tick_vals,
             ticktext=tick_text,
             tickangle=-45,
-            row=3, col=1,
+            row=1, col=1,
         )
-        # Hide tick labels on upper subplots to keep it clean
-        fig.update_xaxes(showticklabels=False, row=1, col=1)
+        # Hide tick labels on RSI and MACD subplots
         fig.update_xaxes(showticklabels=False, row=2, col=1)
+        fig.update_xaxes(showticklabels=False, row=3, col=1)
 
         fig.update_yaxes(title_text=f"Price ({get_currency_info(yf_symbol)[0]})", row=1, col=1)
         fig.update_yaxes(title_text="RSI", row=2, col=1)
