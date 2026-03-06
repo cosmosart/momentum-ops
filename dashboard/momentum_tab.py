@@ -424,15 +424,16 @@ def render_momentum_tab(ticker: str):
                 row=3, col=1
             )
             hist_vals = df['MACD_hist'].values
-            max_abs = max(abs(hist_vals.min()), abs(hist_vals.max())) if len(hist_vals) > 0 else 1
-            if max_abs == 0:
-                max_abs = 1
-            # Gradient: lighter near center, fully saturated at extremes
-            hist_colors = [
-                f'rgba(38,166,154,{0.25 + 0.75 * abs(v) / max_abs})' if v >= 0
-                else f'rgba(239,83,80,{0.25 + 0.75 * abs(v) / max_abs})'
-                for v in hist_vals
-            ]
+            # Color by direction: bright when diverging from center,
+            # lighter when converging (compared to previous bar).
+            hist_colors = []
+            for i, v in enumerate(hist_vals):
+                prev = hist_vals[i - 1] if i > 0 else 0
+                diverging = abs(v) >= abs(prev)
+                if v >= 0:
+                    hist_colors.append('#26a69a' if diverging else '#b2dfdb')
+                else:
+                    hist_colors.append('#ef5350' if diverging else '#ef9a9a')
             fig.add_trace(
                 go.Bar(x=x_idx, y=df['MACD_hist'], name='Histogram', marker_color=hist_colors),
                 row=3, col=1
