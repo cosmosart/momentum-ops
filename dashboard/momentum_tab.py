@@ -231,15 +231,8 @@ def render_momentum_tab(ticker: str):
                 st.metric("RSI (14)", f"{rsi_value:.2f}")
             else:
                 st.metric("RSI (14)", "N/A")
-        
+
         with col4:
-            if 'MACD' in df.columns and not pd.isna(df.iloc[-1]['MACD']):
-                macd_value = df.iloc[-1]['MACD']
-                st.metric("MACD", f"{macd_value:.4f}")
-            else:
-                st.metric("MACD", "N/A")
-        
-        with col5:
             if 'RSI' in df.columns and not pd.isna(df.iloc[-1]['RSI']):
                 rsi = df.iloc[-1]['RSI']
                 if rsi > 70:
@@ -250,6 +243,13 @@ def render_momentum_tab(ticker: str):
                     st.info("🟡 RSI Neutral")
             else:
                 st.info("RSI N/A")
+
+        with col5:
+            if 'MACD' in df.columns and not pd.isna(df.iloc[-1]['MACD']):
+                macd_value = df.iloc[-1]['MACD']
+                st.metric("MACD", f"{macd_value:.4f}")
+            else:
+                st.metric("MACD", "N/A")
         
         with col6:
             if 'MACD' in df.columns and 'MACD_signal' in df.columns:
