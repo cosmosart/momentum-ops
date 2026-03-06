@@ -41,18 +41,18 @@ def render_momentum_tab(ticker: str):
     with col1:
         timeframe = st.selectbox(
             "Timeframe",
-            options=["30 Minutes", "1 Hour", "4 Hours", "1 Day", "1 Week"],
-            index=3,  # Default to 1 Day
+            options=["5 Minutes", "15 Minutes", "30 Minutes", "1 Hour", "4 Hours", "1 Day", "1 Week"],
+            index=5,  # Default to 1 Day
             help="Select data timeframe"
         )
     
     with col2:
         # Period selector based on timeframe
-        if timeframe in ["30 Minutes", "1 Hour", "4 Hours"]:
-            period_options = ["1 Day", "5 Days", "1 Month", "Custom Range"]
+        if timeframe in ["5 Minutes", "15 Minutes", "30 Minutes", "1 Hour", "4 Hours"]:
+            period_options = ["1 Day", "5 Days", "10 Days", "15 Days", "1 Month", "Custom Range"]
             default_period = "5 Days"
         else:
-            period_options = ["1 Month", "3 Months", "6 Months", "1 Year", "3 Years", "5 Years", "Max", "Custom Range"]
+            period_options = ["10 Days", "15 Days", "1 Month", "3 Months", "6 Months", "1 Year", "3 Years", "5 Years", "Max", "Custom Range"]
             default_period = "3 Months"
         
         period = st.selectbox(
@@ -131,6 +131,8 @@ def render_momentum_tab(ticker: str):
     
     # Map selections to yfinance parameters
     interval_map = {
+        "5 Minutes": "5m",
+        "15 Minutes": "15m",
         "30 Minutes": "30m",
         "1 Hour": "1h",
         "4 Hours": "4h",  
@@ -141,6 +143,8 @@ def render_momentum_tab(ticker: str):
     period_map = {
         "1 Day": "1d",
         "5 Days": "5d",
+        "10 Days": "10d",
+        "15 Days": "15d",
         "1 Month": "1mo",
         "3 Months": "3mo",
         "6 Months": "6mo",
