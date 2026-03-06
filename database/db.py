@@ -312,14 +312,23 @@ class Database:
 
     def add_ticker(self, symbol: str):
         """Add a new ticker or reactivate an existing one."""
+        # Infer market region from symbol suffix
+        s = symbol.upper()
+        if s.endswith(".KS") or s.endswith(".KQ"):
+            region = "KR"
+        elif s.endswith(".T"):
+            region = "JP"
+        else:
+            region = "US"
+
         query = """
-        INSERT INTO tickers (symbol, is_active) 
-        VALUES (%s, true)
+        INSERT INTO tickers (symbol, market_region, is_active) 
+        VALUES (%s, %s, true)
         ON CONFLICT (symbol) DO UPDATE SET is_active = true
         """
         try:
             with self.conn.cursor() as cursor:
-                cursor.execute(query, (symbol,))
+                cursor.execute(query, (symbol, region))
                 self.conn.commit()
         except Exception as e:
             logger.error(f"Failed to add ticker {symbol}: {e}")
