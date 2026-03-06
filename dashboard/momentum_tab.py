@@ -219,9 +219,11 @@ def render_momentum_tab(ticker: str):
                 if prev_close != 0:
                     price_change_pct = (price_change / prev_close) * 100
                     change_label = f"{timeframe} Change"
-                    st.metric(change_label, f"{price_change_pct:.2f}%", format_price_change(price_change, yf_symbol))
+                    price_change_str = format_price_change(price_change, yf_symbol)
+                    st.metric(change_label, f"{price_change_pct:.2f}%  {price_change_str}")
                 else:
-                    st.metric(f"{timeframe} Change", "N/A", format_price_change(price_change, yf_symbol))
+                    price_change_str = format_price_change(price_change, yf_symbol)
+                    st.metric(f"{timeframe} Change", f"N/A  {price_change_str}")
             else:
                 st.metric(f"{timeframe} Change", "N/A")
 
