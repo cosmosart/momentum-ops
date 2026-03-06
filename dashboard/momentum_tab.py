@@ -5,6 +5,7 @@ Displays RSI and MACD indicators.
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import sys
@@ -206,7 +207,7 @@ def render_momentum_tab(ticker: str):
         df = pd.concat([df, indicators], axis=1)
         
         # Display current metrics + signal interpretation
-        col1, col2, col3, col4 = st.columns([1.5, 1.5, 1.5, 1.5])
+        col1, col2, col3, col4, col5 = st.columns([1.5, 1.5, 1.5, 1.5, 1.5])
         
         with col1:
             current_price = df.iloc[-1]['Close']
@@ -283,6 +284,35 @@ def render_momentum_tab(ticker: str):
                 )
             else:
                 st.metric("MACD", "N/A")
+
+        with col5:
+            # Linear regression slope over the full period as "Price Trend"
+            if len(df) >= 3:
+                closes = df['Close'].values
+                x = np.arange(len(closes))
+                slope, intercept = np.polyfit(x, closes, 1)
+                # Express slope as % change per bar relative to first fitted value
+                fitted_start = intercept
+                if fitted_start != 0:
+                    slope_pct = (slope / abs(fitted_start)) * 100
+                else:
+                    slope_pct = 0.0
+                if slope_pct >= 0:
+                    trend_text = "📈 Uptrend"
+                    trend_color = "#09ab3b"
+                else:
+                    trend_text = "📉 Downtrend"
+                    trend_color = "#ff2b2b"
+                st.markdown(
+                    f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">Price Trend</div>'
+                    f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
+                    f'<span style="font-size:1.85rem;font-weight:700;color:{trend_color}">{trend_text}</span>'
+                    f'<span style="font-size:1.75rem">{slope_pct:+.2f}%</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.metric("Price Trend", "N/A")
         
         st.divider()
         
