@@ -206,7 +206,7 @@ def render_momentum_tab(ticker: str):
         df = pd.concat([df, indicators], axis=1)
         
         # Display current metrics + signal interpretation
-        col1, col2, col3, col4, col5, col6 = st.columns([1.5, 1.5, 1.5, 1.5, 2, 2])
+        col1, col2, col3, col4 = st.columns([1.5, 1.5, 1.5, 1.5])
         
         with col1:
             current_price = df.iloc[-1]['Close']
@@ -239,42 +239,50 @@ def render_momentum_tab(ticker: str):
         with col3:
             if 'RSI' in df.columns and not pd.isna(df.iloc[-1]['RSI']):
                 rsi_value = df.iloc[-1]['RSI']
-                st.metric("RSI (14)", f"{rsi_value:.2f}")
+                if rsi_value > 70:
+                    signal_text = "🔴 Overbought"
+                    signal_color = "#ff2b2b"
+                elif rsi_value < 30:
+                    signal_text = "🟢 Oversold"
+                    signal_color = "#09ab3b"
+                else:
+                    signal_text = "🟡 Neutral"
+                    signal_color = "#faca2b"
+                st.markdown(
+                    f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">RSI (14)</div>'
+                    f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
+                    f'<span style="font-size:1.75rem;font-weight:700">{rsi_value:.2f}</span>'
+                    f'<span style="font-size:0.875rem;color:{signal_color}">{signal_text}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
             else:
                 st.metric("RSI (14)", "N/A")
 
         with col4:
-            if 'RSI' in df.columns and not pd.isna(df.iloc[-1]['RSI']):
-                rsi = df.iloc[-1]['RSI']
-                if rsi > 70:
-                    st.warning("🔴 Overbought")
-                elif rsi < 30:
-                    st.success("🟢 Oversold")
-                else:
-                    st.info("🟡 RSI Neutral")
-            else:
-                st.info("RSI N/A")
-
-        with col5:
             if 'MACD' in df.columns and not pd.isna(df.iloc[-1]['MACD']):
                 macd_value = df.iloc[-1]['MACD']
-                st.metric("MACD", f"{macd_value:.4f}")
+                if 'MACD_signal' in df.columns and not pd.isna(df.iloc[-1]['MACD_signal']):
+                    signal_val = df.iloc[-1]['MACD_signal']
+                    if macd_value > signal_val:
+                        signal_text = "🟢 Bullish"
+                        signal_color = "#09ab3b"
+                    else:
+                        signal_text = "🔴 Bearish"
+                        signal_color = "#ff2b2b"
+                else:
+                    signal_text = ""
+                    signal_color = "grey"
+                st.markdown(
+                    f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">MACD</div>'
+                    f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
+                    f'<span style="font-size:1.75rem;font-weight:700">{macd_value:.4f}</span>'
+                    f'<span style="font-size:0.875rem;color:{signal_color}">{signal_text}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
             else:
                 st.metric("MACD", "N/A")
-        
-        with col6:
-            if 'MACD' in df.columns and 'MACD_signal' in df.columns:
-                macd = df.iloc[-1]['MACD']
-                signal = df.iloc[-1]['MACD_signal']
-                if not pd.isna(macd) and not pd.isna(signal):
-                    if macd > signal:
-                        st.success("🟢 MACD Bullish")
-                    else:
-                        st.warning("🔴 MACD Bearish")
-                else:
-                    st.info("MACD N/A")
-            else:
-                st.info("MACD N/A")
         
         st.divider()
         
