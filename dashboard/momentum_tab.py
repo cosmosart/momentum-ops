@@ -355,7 +355,11 @@ def render_momentum_tab(ticker: str):
             shared_xaxes=True,
             vertical_spacing=0.05,
             subplot_titles=('Price', 'Volume', 'RSI', 'MACD'),
-            row_heights=[1.0, 0.2, 0.25, 0.375]
+            row_heights=[1.0, 0.2, 0.25, 0.375],
+            specs=[[{"secondary_y": False}],
+                   [{"secondary_y": True}],
+                   [{"secondary_y": False}],
+                   [{"secondary_y": False}]],
         )
         
         # Price chart
@@ -576,16 +580,10 @@ def render_momentum_tab(ticker: str):
                 line=dict(color='#9B59B6', width=1.2),
                 customdata=tick_labels.values,
                 hovertemplate='%{customdata}<br>OBV: %{y:,.0f}<extra></extra>',
-                yaxis='y5',
             ),
+            row=2, col=1, secondary_y=True,
         )
-        # Add secondary y-axis for OBV aligned with volume subplot (row 2 = yaxis2)
-        fig.update_layout(
-            yaxis5=dict(
-                overlaying='y2', side='right', showgrid=False,
-                title='OBV', showticklabels=True,
-            ),
-        )
+        fig.update_yaxes(title_text='OBV', showgrid=False, row=2, col=1, secondary_y=True)
 
         # VWAP on price chart
         if show_vwap:
