@@ -48,7 +48,7 @@ def render_momentum_tab(ticker: str):
     st.header(f"Momentum Analysis for {company_name}")
     
     # Controls row
-    col_tf, col_period, col_ma_type, col_ma_select, col_bb, col_sr_toggle, col_sr_levels = st.columns([1.5, 1.5, 1, 3, 1, 1.5, 0.5])
+    col_tf, col_period, col_ma_type, col_ma_select, col_bb, col_vwap, col_sr_toggle, col_sr_levels = st.columns([1.5, 1.5, 1, 3, 1, 0.8, 1.5, 0.5])
     with col_tf:
         timeframe = st.selectbox(
             "Timeframe",
@@ -94,6 +94,13 @@ def render_momentum_tab(ticker: str):
             "Bollinger Bands",
             value=False,
             help="20-period Bollinger Bands (±2 std dev)"
+        )
+
+    with col_vwap:
+        show_vwap = st.checkbox(
+            "VWAP",
+            value=False,
+            help="Volume Weighted Average Price"
         )
 
     with col_sr_toggle:
@@ -541,6 +548,59 @@ def render_momentum_tab(ticker: str):
             ),
             row=2, col=1,
         )
+
+        # Volume MA (20-period)
+        vol_ma = df['Volume'].rolling(window=20).mean()
+        fig.add_trace(
+            go.Scatter(
+                x=x_idx, y=vol_ma, name='Vol MA(20)',
+                line=dict(color='#FFA500', width=1.5),
+                customdata=tick_labels.values,
+                hovertemplate='%{customdata}<br>Vol MA: %{y:,.0f}<extra></extra>',
+            ),
+            row=2, col=1,
+        )
+
+        # On-Balance Volume (OBV) on secondary y-axis of volume subplot
+        obv = [0]
+        for i in range(1, len(df)):
+            if df['Close'].iloc[i] > df['Close'].iloc[i - 1]:
+                obv.append(obv[-1] + df['Volume'].iloc[i])
+            elif df['Close'].iloc[i] < df['Close'].iloc[i - 1]:
+                obv.append(obv[-1] - df['Volume'].iloc[i])
+            else:
+                obv.append(obv[-1])
+        fig.add_trace(
+            go.Scatter(
+                x=x_idx, y=obv, name='OBV',
+                line=dict(color='#9B59B6', width=1.2),
+                customdata=tick_labels.values,
+                hovertemplate='%{customdata}<br>OBV: %{y:,.0f}<extra></extra>',
+                yaxis='y5',
+            ),
+        )
+        # Add secondary y-axis for OBV aligned with volume subplot (row 2 = yaxis2)
+        fig.update_layout(
+            yaxis5=dict(
+                overlaying='y2', side='right', showgrid=False,
+                title='OBV', showticklabels=True,
+            ),
+        )
+
+        # VWAP on price chart
+        if show_vwap:
+            cum_vol = df['Volume'].cumsum()
+            cum_vwap = (df['Close'] * df['Volume']).cumsum()
+            vwap = cum_vwap / cum_vol
+            fig.add_trace(
+                go.Scatter(
+                    x=x_idx, y=vwap, name='VWAP',
+                    line=dict(color='#FF00FF', width=1.5, dash='dashdot'),
+                    customdata=tick_labels.values,
+                    hovertemplate='%{customdata}<br>VWAP: %{y:.2f}<extra></extra>',
+                ),
+                row=1, col=1,
+            )
 
         # RSI chart
         if 'RSI' in df.columns:
