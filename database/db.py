@@ -310,17 +310,8 @@ class Database:
             logger.error(f"Failed to fetch all tickers: {e}")
             return []
 
-    def add_ticker(self, symbol: str):
+    def add_ticker(self, symbol: str, region: str = "US"):
         """Add a new ticker or reactivate an existing one."""
-        # Infer market region from symbol suffix
-        s = symbol.upper()
-        if s.endswith(".KS") or s.endswith(".KQ"):
-            region = "KR"
-        elif s.endswith(".T"):
-            region = "JP"
-        else:
-            region = "US"
-
         query = """
         INSERT INTO tickers (symbol, market_region, is_active) 
         VALUES (%s, %s, true)

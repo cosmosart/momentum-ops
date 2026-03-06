@@ -59,7 +59,7 @@ def render_ticker_management():
         # Add new ticker
         st.subheader("➕ Add New Ticker")
         
-        col1, col2 = st.columns([3, 1])
+        col1, col2, col3 = st.columns([3, 1, 1])
         with col1:
             new_ticker = st.text_input(
                 "Ticker Symbol",
@@ -67,6 +67,13 @@ def render_ticker_management():
                 help="Enter stock ticker symbol. Examples: AAPL (US), 1542.T (Japan), 005930.KS (Korea)"
             ).upper().strip()
         with col2:
+            region = st.selectbox(
+                "Market Region",
+                options=["US", "KR", "JP", "GLOBAL"],
+                index=0,
+                help="Select the market region for this ticker",
+            )
+        with col3:
             st.write("")  # Spacer
             st.write("")  # Spacer
             add_button = st.button("Add Ticker", type="primary", use_container_width=True)
@@ -82,7 +89,7 @@ def render_ticker_management():
                     has_price_data = any(info.get(k) is not None for k in price_keys)
                     if not info or not has_price_data:
                         raise ValueError("no price data")
-                    db.add_ticker(new_ticker)
+                    db.add_ticker(new_ticker, region=region)
                     name = info.get("longName", info.get("shortName", new_ticker))
                     st.success(f"✅ Added ticker: **{new_ticker}** ({name})")
                     st.rerun()
