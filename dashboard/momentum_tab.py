@@ -226,7 +226,7 @@ def render_momentum_tab(ticker: str):
                         f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">{change_label}</div>'
                         f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
                         f'<span style="font-size:1.75rem;font-weight:700">{price_change_pct:.2f}%</span>'
-                        f'<span style="font-size:0.875rem;color:{color}">{arrow} {price_change_str}</span>'
+                        f'<span style="font-size:1rem;color:{color}">{arrow} {price_change_str}</span>'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
@@ -252,7 +252,7 @@ def render_momentum_tab(ticker: str):
                     f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">RSI (14)</div>'
                     f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
                     f'<span style="font-size:1.75rem;font-weight:700">{rsi_value:.2f}</span>'
-                    f'<span style="font-size:0.875rem;color:{signal_color}">{signal_text}</span>'
+                    f'<span style="font-size:1rem;color:{signal_color}">{signal_text}</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
