@@ -344,11 +344,11 @@ def render_momentum_tab(ticker: str):
 
         # Create subplots for price and indicators
         fig = make_subplots(
-            rows=3, cols=1,
+            rows=4, cols=1,
             shared_xaxes=True,
             vertical_spacing=0.05,
-            subplot_titles=('Price', 'RSI', 'MACD'),
-            row_heights=[1.0, 0.25, 0.375]
+            subplot_titles=('Price', 'Volume', 'RSI', 'MACD'),
+            row_heights=[1.0, 0.2, 0.25, 0.375]
         )
         
         # Price chart
@@ -526,6 +526,22 @@ def render_momentum_tab(ticker: str):
                     row=1, col=1
                 )
         
+        # Volume chart
+        vol_colors = [
+            '#26a69a' if df['Close'].iloc[i] >= df['Open'].iloc[i] else '#ef5350'
+            for i in range(len(df))
+        ]
+        fig.add_trace(
+            go.Bar(
+                x=x_idx, y=df['Volume'], name='Volume',
+                marker_color=vol_colors, opacity=0.7,
+                customdata=tick_labels.values,
+                hovertemplate='%{customdata}<br>Vol: %{y:,.0f}<extra></extra>',
+                showlegend=False,
+            ),
+            row=2, col=1,
+        )
+
         # RSI chart
         if 'RSI' in df.columns:
             rsi_vals = df['RSI']
@@ -536,7 +552,7 @@ def render_momentum_tab(ticker: str):
                     x=x_idx, y=[70] * len(df), mode='lines',
                     line=dict(width=0), showlegend=False, hoverinfo='skip',
                 ),
-                row=2, col=1,
+                row=3, col=1,
             )
             fig.add_trace(
                 go.Scatter(
@@ -544,7 +560,7 @@ def render_momentum_tab(ticker: str):
                     line=dict(width=0), showlegend=False, hoverinfo='skip',
                     fill='tonexty', fillcolor='rgba(239,83,80,0.25)',
                 ),
-                row=2, col=1,
+                row=3, col=1,
             )
             # Oversold fill (below 30)
             rsi_below_30 = rsi_vals.where(rsi_vals <= 30)
@@ -553,7 +569,7 @@ def render_momentum_tab(ticker: str):
                     x=x_idx, y=[30] * len(df), mode='lines',
                     line=dict(width=0), showlegend=False, hoverinfo='skip',
                 ),
-                row=2, col=1,
+                row=3, col=1,
             )
             fig.add_trace(
                 go.Scatter(
@@ -561,7 +577,7 @@ def render_momentum_tab(ticker: str):
                     line=dict(width=0), showlegend=False, hoverinfo='skip',
                     fill='tonexty', fillcolor='rgba(38,166,154,0.25)',
                 ),
-                row=2, col=1,
+                row=3, col=1,
             )
             # RSI line on top
             fig.add_trace(
@@ -570,11 +586,11 @@ def render_momentum_tab(ticker: str):
                     customdata=tick_labels.values,
                     hovertemplate='%{customdata}<br>RSI: %{y:.2f}<extra></extra>',
                 ),
-                row=2, col=1
+                row=3, col=1
             )
             # Add RSI reference lines
-            fig.add_hline(y=70, line_dash="dash", line_color="red", opacity=0.5, row=2, col=1)
-            fig.add_hline(y=30, line_dash="dash", line_color="green", opacity=0.5, row=2, col=1)
+            fig.add_hline(y=70, line_dash="dash", line_color="red", opacity=0.5, row=3, col=1)
+            fig.add_hline(y=30, line_dash="dash", line_color="green", opacity=0.5, row=3, col=1)
         
         # MACD chart
         if 'MACD' in df.columns:
@@ -584,7 +600,7 @@ def render_momentum_tab(ticker: str):
                     customdata=tick_labels.values,
                     hovertemplate='%{customdata}<br>MACD: %{y:.4f}<extra></extra>',
                 ),
-                row=3, col=1
+                row=4, col=1
             )
             fig.add_trace(
                 go.Scatter(
@@ -592,7 +608,7 @@ def render_momentum_tab(ticker: str):
                     customdata=tick_labels.values,
                     hovertemplate='%{customdata}<br>Signal: %{y:.4f}<extra></extra>',
                 ),
-                row=3, col=1
+                row=4, col=1
             )
             hist_vals = df['MACD_hist'].values
             # Color by direction: bright when diverging from center,
@@ -612,19 +628,19 @@ def render_momentum_tab(ticker: str):
                     customdata=tick_labels.values,
                     hovertemplate='%{customdata}<br>Hist: %{y:.4f}<extra></extra>',
                 ),
-                row=3, col=1
+                row=4, col=1
             )
         
         # Update layout
         fig.update_layout(
-            height=1000,
+            height=1100,
             showlegend=True,
             xaxis_rangeslider_visible=False,
             hovermode='closest',
             spikedistance=-1,
         )
         # Spike crosshair on all x-axes
-        for ax in ['xaxis', 'xaxis2', 'xaxis3']:
+        for ax in ['xaxis', 'xaxis2', 'xaxis3', 'xaxis4']:
             fig.update_layout(**{ax: dict(
                 showspikes=True, spikemode='across', spikethickness=0.5,
                 spikecolor='grey', spikedash='dot',
@@ -637,13 +653,15 @@ def render_momentum_tab(ticker: str):
             tickangle=-45,
             row=1, col=1,
         )
-        # Hide tick labels on RSI and MACD subplots
+        # Hide tick labels on Volume, RSI and MACD subplots
         fig.update_xaxes(showticklabels=False, row=2, col=1)
         fig.update_xaxes(showticklabels=False, row=3, col=1)
+        fig.update_xaxes(showticklabels=False, row=4, col=1)
 
         fig.update_yaxes(title_text=f"Price ({get_currency_info(yf_symbol)[0]})", row=1, col=1)
-        fig.update_yaxes(title_text="RSI", row=2, col=1)
-        fig.update_yaxes(title_text="MACD", row=3, col=1)
+        fig.update_yaxes(title_text="Volume", row=2, col=1)
+        fig.update_yaxes(title_text="RSI", row=3, col=1)
+        fig.update_yaxes(title_text="MACD", row=4, col=1)
         
         st.plotly_chart(fig, use_container_width=True)
     
