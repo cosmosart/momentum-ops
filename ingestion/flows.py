@@ -166,9 +166,10 @@ def upsert_daily_prices(ticker: str, region: str, df: pd.DataFrame) -> int:
 def upsert_realtime_price(data: dict[str, Any]) -> None:
     """Insert a single realtime price row."""
     query = """
-        INSERT INTO price_realtime (ticker, timestamp, open, high, low, close, volume)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO price_realtime (ticker, region, timestamp, open, high, low, close, volume)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (ticker, timestamp) DO UPDATE SET
+            region = EXCLUDED.region,
             open   = EXCLUDED.open,
             high   = EXCLUDED.high,
             low    = EXCLUDED.low,
@@ -181,6 +182,7 @@ def upsert_realtime_price(data: dict[str, Any]) -> None:
                 query,
                 (
                     data["ticker"],
+                    data["region"],
                     data["timestamp"],
                     data["open"],
                     data["high"],
@@ -240,7 +242,7 @@ def _safe_float(value: Any) -> float | None:
     retry_delay_seconds=5,
     description="Compute features, run four XGBoost models, persist analysis row.",
 )
-def run_inference_and_persist(ticker: str, daily_df: pd.DataFrame) -> None:
+def run_inference_and_persist(ticker: str, region: str, daily_df: pd.DataFrame) -> None:
     """
     Feature-engineer, run four-model XGBoost inference, and upsert results
     into ``analysis_info``.
@@ -271,7 +273,7 @@ def run_inference_and_persist(ticker: str, daily_df: pd.DataFrame) -> None:
 
     query = """
         INSERT INTO analysis_info (
-            ticker, date, rsi, macd, macd_signal, macd_hist,
+            ticker, region, date, rsi, macd, macd_signal, macd_hist,
             bb_upper, bb_middle, bb_lower,
             prob_active_1w, prob_conservative_1mo,
             prob_conservative_6mo, prob_experimental,
@@ -279,10 +281,11 @@ def run_inference_and_persist(ticker: str, daily_df: pd.DataFrame) -> None:
             features_conservative_6mo, features_experimental
         )
         VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s, %s, %s, %s
         )
         ON CONFLICT (ticker, date) DO UPDATE SET
+            region                   = EXCLUDED.region,
             rsi                      = EXCLUDED.rsi,
             macd                     = EXCLUDED.macd,
             macd_signal              = EXCLUDED.macd_signal,
@@ -301,6 +304,7 @@ def run_inference_and_persist(ticker: str, daily_df: pd.DataFrame) -> None:
     """
     params = (
         ticker,
+        region,
         latest_date,
         _safe_float(indicators.loc[latest_idx, "RSI"]) if "RSI" in indicators.columns else None,
         _safe_float(indicators.loc[latest_idx, "MACD"]) if "MACD" in indicators.columns else None,
@@ -353,14 +357,15 @@ def process_single_ticker(ticker: str, region: str, include_realtime: bool = Tru
     daily_df = fetch_yfinance_daily(yf_sym, period="3mo")
     if daily_df is not None and not daily_df.empty:
         upsert_daily_prices(ticker, region, daily_df)
-        run_inference_and_persist(ticker, daily_df)
+        run_inference_and_persist(ticker, region, daily_df)
 
     # 3. Realtime snapshot (optional — only during trading hours)
     if include_realtime:
         rt_data = fetch_yfinance_realtime(yf_sym)
         if rt_data is not None:
-            # Override the ticker key so DB stores the raw symbol
+            # Override the ticker/region keys so DB stores the raw symbol
             rt_data["ticker"] = ticker
+            rt_data["region"] = region
             upsert_realtime_price(rt_data)
 
 

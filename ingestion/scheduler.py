@@ -187,7 +187,8 @@ class DataScheduler:
                     high=realtime_data['high'],
                     low=realtime_data['low'],
                     close=realtime_data['close'],
-                    volume=realtime_data['volume']
+                    volume=realtime_data['volume'],
+                    region=region,
                 )
                 logger.info(f"Inserted realtime data for {ticker}")
             
@@ -236,6 +237,7 @@ class DataScheduler:
                         features_conservative_1mo=_contrib_json("conservative_1mo"),
                         features_conservative_6mo=_contrib_json("conservative_6mo"),
                         features_experimental=_contrib_json("experimental"),
+                        region=region,
                     )
                     logger.info(f"Inserted analysis data for {ticker}")
                 

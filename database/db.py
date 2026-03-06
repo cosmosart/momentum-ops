@@ -77,23 +77,25 @@ class Database:
     
     def insert_realtime_price(self, ticker: str, timestamp: datetime, 
                              open_price: float, high: float, low: float, 
-                             close: float, volume: int):
+                             close: float, volume: int, region: str = "US"):
         """
         Insert real-time price data.
         
         Args:
-            ticker: Stock ticker symbol
+            ticker: Raw stock ticker symbol
             timestamp: Price timestamp
             open_price: Opening price
             high: High price
             low: Low price
             close: Closing price
             volume: Trading volume
+            region: Market region code (US, KR, JP, GLOBAL)
         """
         query = """
-        INSERT INTO price_realtime (ticker, timestamp, open, high, low, close, volume)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO price_realtime (ticker, region, timestamp, open, high, low, close, volume)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (ticker, timestamp) DO UPDATE SET
+            region = EXCLUDED.region,
             open = EXCLUDED.open,
             high = EXCLUDED.high,
             low = EXCLUDED.low,
@@ -102,7 +104,7 @@ class Database:
         """
         try:
             with self.conn.cursor() as cursor:
-                cursor.execute(query, (ticker, timestamp, open_price, high, low, close, volume))
+                cursor.execute(query, (ticker, region, timestamp, open_price, high, low, close, volume))
                 self.conn.commit()
         except Exception as e:
             logger.error(f"Failed to insert realtime price: {e}")
@@ -167,12 +169,13 @@ class Database:
         features_conservative_1mo: Optional[str] = None,
         features_conservative_6mo: Optional[str] = None,
         features_experimental: Optional[str] = None,
+        region: str = "US",
     ):
         """
         Insert analysis data (indicators + directional probabilities + SHAP contributions).
 
         Args:
-            ticker: Stock ticker symbol
+            ticker: Raw stock ticker symbol
             date_val: Analysis date
             rsi: RSI (14) value
             macd: MACD line value
@@ -189,10 +192,11 @@ class Database:
             features_conservative_1mo: JSON string of top-3 SHAP contributions (conservative 1mo)
             features_conservative_6mo: JSON string of top-3 SHAP contributions (conservative 6mo)
             features_experimental: JSON string of top-3 SHAP contributions (experimental)
+            region: Market region code (US, KR, JP, GLOBAL)
         """
         query = """
         INSERT INTO analysis_info (
-            ticker, date, rsi, macd, macd_signal, macd_hist,
+            ticker, region, date, rsi, macd, macd_signal, macd_hist,
             bb_upper, bb_middle, bb_lower,
             prob_active_1w, prob_conservative_1mo,
             prob_conservative_6mo, prob_experimental,
@@ -200,11 +204,12 @@ class Database:
             features_conservative_6mo, features_experimental
         )
         VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
             %s, %s, %s, %s,
             %s, %s, %s, %s
         )
         ON CONFLICT (ticker, date) DO UPDATE SET
+            region = EXCLUDED.region,
             rsi = EXCLUDED.rsi,
             macd = EXCLUDED.macd,
             macd_signal = EXCLUDED.macd_signal,
@@ -226,7 +231,7 @@ class Database:
                 cursor.execute(
                     query,
                     (
-                        ticker, date_val, rsi, macd, macd_signal, macd_hist,
+                        ticker, region, date_val, rsi, macd, macd_signal, macd_hist,
                         bb_upper, bb_middle, bb_lower,
                         prob_active_1w, prob_conservative_1mo,
                         prob_conservative_6mo, prob_experimental,

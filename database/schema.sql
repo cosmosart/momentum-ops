@@ -21,6 +21,7 @@ CREATE INDEX IF NOT EXISTS idx_tickers_market ON tickers(market_region);
 CREATE TABLE IF NOT EXISTS price_realtime (
     id SERIAL PRIMARY KEY,
     ticker VARCHAR(20) NOT NULL REFERENCES tickers(symbol) ON DELETE CASCADE,
+    region VARCHAR(10) NOT NULL DEFAULT 'US',
     timestamp TIMESTAMPTZ NOT NULL,
     open DECIMAL(12, 4),
     high DECIMAL(12, 4),
@@ -33,6 +34,7 @@ CREATE TABLE IF NOT EXISTS price_realtime (
 
 CREATE INDEX IF NOT EXISTS idx_price_realtime_ticker ON price_realtime(ticker);
 CREATE INDEX IF NOT EXISTS idx_price_realtime_timestamp ON price_realtime(timestamp);
+CREATE INDEX IF NOT EXISTS idx_price_realtime_region ON price_realtime(region);
 
 -- Stores daily aggregated price data for foundational trends and backtesting
 CREATE TABLE IF NOT EXISTS price_daily (
@@ -61,6 +63,7 @@ CREATE INDEX IF NOT EXISTS idx_price_daily_region ON price_daily(region);
 CREATE TABLE IF NOT EXISTS fundamental_daily (
     id SERIAL PRIMARY KEY,
     ticker VARCHAR(20) NOT NULL REFERENCES tickers(symbol) ON DELETE CASCADE,
+    region VARCHAR(10) NOT NULL DEFAULT 'US',
     date DATE NOT NULL,
     pe_ratio DECIMAL(10, 4),
     eps DECIMAL(10, 4),
@@ -73,6 +76,7 @@ CREATE TABLE IF NOT EXISTS fundamental_daily (
 
 CREATE INDEX IF NOT EXISTS idx_fundamental_daily_ticker ON fundamental_daily(ticker);
 CREATE INDEX IF NOT EXISTS idx_fundamental_daily_date ON fundamental_daily(date);
+CREATE INDEX IF NOT EXISTS idx_fundamental_daily_region ON fundamental_daily(region);
 
 -- ==============================================================================
 -- 4. MACHINE LEARNING OUTPUTS
@@ -81,6 +85,7 @@ CREATE INDEX IF NOT EXISTS idx_fundamental_daily_date ON fundamental_daily(date)
 CREATE TABLE IF NOT EXISTS analysis_info (
     id SERIAL PRIMARY KEY,
     ticker VARCHAR(20) NOT NULL REFERENCES tickers(symbol) ON DELETE CASCADE,
+    region VARCHAR(10) NOT NULL DEFAULT 'US',
     date DATE NOT NULL,
     
     -- Technical Features
@@ -110,3 +115,4 @@ CREATE TABLE IF NOT EXISTS analysis_info (
 
 CREATE INDEX IF NOT EXISTS idx_analysis_info_ticker ON analysis_info(ticker);
 CREATE INDEX IF NOT EXISTS idx_analysis_info_date ON analysis_info(date);
+CREATE INDEX IF NOT EXISTS idx_analysis_info_region ON analysis_info(region);
