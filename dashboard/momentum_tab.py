@@ -48,7 +48,7 @@ def render_momentum_tab(ticker: str):
     st.header(f"Momentum Analysis for {company_name}")
     
     # Controls row
-    col_tf, col_period, col_ma_type, col_ma_select, col_sr_toggle, col_sr_levels = st.columns([1.5, 1.5, 1, 3, 1.5, 0.5])
+    col_tf, col_period, col_ma_type, col_ma_select, col_bb, col_sr_toggle, col_sr_levels = st.columns([1.5, 1.5, 1, 3, 1, 1.5, 0.5])
     with col_tf:
         timeframe = st.selectbox(
             "Timeframe",
@@ -89,6 +89,13 @@ def render_momentum_tab(ticker: str):
             help="Select moving average periods to display on price chart"
         )
     
+    with col_bb:
+        show_bollinger = st.checkbox(
+            "Bollinger Bands",
+            value=False,
+            help="20-period Bollinger Bands (±2 std dev)"
+        )
+
     with col_sr_toggle:
         show_support_resistance = st.checkbox(
             "Support & Resistance",
@@ -404,6 +411,44 @@ def render_momentum_tab(ticker: str):
                         row=1, col=1
                     )
         
+        # Add Bollinger Bands if enabled
+        if show_bollinger:
+            bb_period = 20
+            bb_std = 2
+            bb_mid = df['Close'].rolling(window=bb_period).mean()
+            bb_rolling_std = df['Close'].rolling(window=bb_period).std()
+            bb_upper = bb_mid + bb_std * bb_rolling_std
+            bb_lower = bb_mid - bb_std * bb_rolling_std
+
+            fig.add_trace(
+                go.Scatter(
+                    x=x_idx, y=bb_upper, name='BB Upper',
+                    line=dict(color='rgba(173,216,230,0.6)', width=1),
+                    customdata=tick_labels.values,
+                    hovertemplate='%{customdata}<br>BB Upper: %{y:.2f}<extra></extra>',
+                ),
+                row=1, col=1,
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=x_idx, y=bb_lower, name='BB Lower',
+                    line=dict(color='rgba(173,216,230,0.6)', width=1),
+                    fill='tonexty', fillcolor='rgba(173,216,230,0.12)',
+                    customdata=tick_labels.values,
+                    hovertemplate='%{customdata}<br>BB Lower: %{y:.2f}<extra></extra>',
+                ),
+                row=1, col=1,
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=x_idx, y=bb_mid, name='BB Mid',
+                    line=dict(color='rgba(173,216,230,0.8)', width=1, dash='dot'),
+                    customdata=tick_labels.values,
+                    hovertemplate='%{customdata}<br>BB Mid: %{y:.2f}<extra></extra>',
+                ),
+                row=1, col=1,
+            )
+
         # Add support and resistance levels if enabled
         if show_support_resistance:
             # Function to find local extrema
