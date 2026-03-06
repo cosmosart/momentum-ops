@@ -24,6 +24,16 @@ def render_momentum_tab(ticker: str):
     Args:
         ticker: Raw stock ticker symbol (no yfinance suffix)
     """
+    # Maximize chart width — reduce Streamlit's default block-container padding
+    st.markdown(
+        """
+        <style>
+        .block-container { max-width: 98%; padding-left: 1rem; padding-right: 1rem; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     yf_symbol = st.session_state.get("yf_symbol", ticker)
 
     # Get company name
@@ -242,6 +252,23 @@ def render_momentum_tab(ticker: str):
         
         st.divider()
         
+        # Build a sequential integer index so the chart has no gaps
+        # for weekends, holidays, or non-trading hours.
+        df = df.reset_index(drop=True)
+        x_idx = df.index  # 0, 1, 2, …
+
+        # Formatted tick labels (show every ~Nth label to avoid clutter)
+        is_intraday = timeframe in ["5 Minutes", "15 Minutes", "30 Minutes", "1 Hour", "4 Hours"]
+        if is_intraday:
+            tick_labels = df['Date'].dt.strftime('%m/%d %H:%M')
+        else:
+            tick_labels = df['Date'].dt.strftime('%Y-%m-%d')
+
+        n_ticks = min(len(df), 40)  # show at most ~40 labels
+        tick_step = max(1, len(df) // n_ticks)
+        tick_vals = list(range(0, len(df), tick_step))
+        tick_text = [tick_labels.iloc[i] for i in tick_vals]
+
         # Create subplots for price and indicators
         fig = make_subplots(
             rows=3, cols=1,
@@ -254,7 +281,7 @@ def render_momentum_tab(ticker: str):
         # Price chart
         fig.add_trace(
             go.Candlestick(
-                x=df['Date'],
+                x=x_idx,
                 open=df['Open'],
                 high=df['High'],
                 low=df['Low'],
@@ -286,7 +313,7 @@ def render_momentum_tab(ticker: str):
                 if col_name in df.columns:
                     fig.add_trace(
                         go.Scatter(
-                            x=df['Date'],
+                            x=x_idx,
                             y=df[col_name],
                             name=col_name,
                             line=dict(
@@ -379,7 +406,7 @@ def render_momentum_tab(ticker: str):
         # RSI chart
         if 'RSI' in df.columns:
             fig.add_trace(
-                go.Scatter(x=df['Date'], y=df['RSI'], name='RSI', line=dict(color='purple')),
+                go.Scatter(x=x_idx, y=df['RSI'], name='RSI', line=dict(color='purple')),
                 row=2, col=1
             )
             # Add RSI reference lines
@@ -389,15 +416,15 @@ def render_momentum_tab(ticker: str):
         # MACD chart
         if 'MACD' in df.columns:
             fig.add_trace(
-                go.Scatter(x=df['Date'], y=df['MACD'], name='MACD', line=dict(color='blue')),
+                go.Scatter(x=x_idx, y=df['MACD'], name='MACD', line=dict(color='blue')),
                 row=3, col=1
             )
             fig.add_trace(
-                go.Scatter(x=df['Date'], y=df['MACD_signal'], name='Signal', line=dict(color='orange')),
+                go.Scatter(x=x_idx, y=df['MACD_signal'], name='Signal', line=dict(color='orange')),
                 row=3, col=1
             )
             fig.add_trace(
-                go.Bar(x=df['Date'], y=df['MACD_hist'], name='Histogram', marker_color='gray'),
+                go.Bar(x=x_idx, y=df['MACD_hist'], name='Histogram', marker_color='gray'),
                 row=3, col=1
             )
         
@@ -409,6 +436,18 @@ def render_momentum_tab(ticker: str):
             hovermode='x unified'
         )
         
+        # Apply categorical tick labels on the bottom x-axis (row 3)
+        # All rows share x-axes, so setting on xaxis3 propagates upward.
+        fig.update_xaxes(
+            tickvals=tick_vals,
+            ticktext=tick_text,
+            tickangle=-45,
+            row=3, col=1,
+        )
+        # Hide tick labels on upper subplots to keep it clean
+        fig.update_xaxes(showticklabels=False, row=1, col=1)
+        fig.update_xaxes(showticklabels=False, row=2, col=1)
+
         fig.update_yaxes(title_text=f"Price ({get_currency_info(yf_symbol)[0]})", row=1, col=1)
         fig.update_yaxes(title_text="RSI", row=2, col=1)
         fig.update_yaxes(title_text="MACD", row=3, col=1)
