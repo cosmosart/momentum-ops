@@ -43,7 +43,7 @@ COPY pyproject.toml README.md ./
 # ── Install ONLY core + ingestion dependencies ───────────────────────────
 # --no-editable: we don't need an editable install inside a container.
 # --system: install into the base Python (no virtual env).
-RUN uv pip install --system ".[ingestion]"
+RUN uv pip install --system ".[ingestion,ml]"
 
 # ── Copy application source ──────────────────────────────────────────────
 COPY shared/ shared/
