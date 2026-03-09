@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 # ── Page config (must be the first Streamlit command) ─────────────────────
 st.set_page_config(
-    page_title="Momentum Ops — Market Analysis",
+    page_title="Momentum Ops — Hub",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",

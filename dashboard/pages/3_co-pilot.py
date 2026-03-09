@@ -1,8 +1,8 @@
 """
-📊 Momentum Analysis — Streamlit native page.
+🤖 Co-Pilot — Streamlit native page.
 
-Displays RSI, MACD, and Bollinger Band technical indicator charts for
-the selected ticker.
+Generates structured LLM prompts (ChatGPT / Gemini / Claude) from the
+latest analysis data for secondary human-in-the-loop review.
 """
 
 from __future__ import annotations
@@ -17,8 +17,8 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from dashboard.app import render_sidebar
-from dashboard.momentum_tab import render_momentum_tab
+from dashboard.ai_advisor_tab import render_ai_advisor_tab
 
 ticker = render_sidebar()
 
-render_momentum_tab(ticker)
+render_ai_advisor_tab(ticker)

@@ -1,5 +1,5 @@
 """
-⚙️ Manage Tickers — Streamlit native page.
+⚙️ Config — Streamlit native page.
 
 Add, deactivate, and review tracked ticker symbols.
 """

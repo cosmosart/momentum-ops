@@ -1,5 +1,5 @@
 """
-🎯 Directional Outlook — Streamlit native page.
+🎯 Trend Radar — Streamlit native page.
 
 Displays XGBoost directional-probability scores from four strategy models
 and the SHAP feature contributions behind each prediction.
