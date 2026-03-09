@@ -20,6 +20,7 @@ services:
       - "8501:8501"
     volumes:
       - model_artifacts:/opt/momentum-ops/model_artifacts
+      - kis_token:/opt/momentum-ops/ephemeral
     environment:
       DB_HOST: ${DB_HOST:?Set DB_HOST to db-server IP}
       DB_PORT: ${DB_PORT:-5432}
@@ -27,6 +28,10 @@ services:
       DB_USER: ${DB_USER:-momentum_user}
       DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
       DEFAULT_TICKER: ${DEFAULT_TICKER:-AAPL}
+      KIS_APP_KEY: ${KIS_APP_KEY:-}
+      KIS_APP_SECRET: ${KIS_APP_SECRET:-}
+      KIS_API_BASE_URL: ${KIS_API_BASE_URL:-https://openapi.koreainvestment.com:9443}
+      KIS_TOKEN_PATH: /opt/momentum-ops/ephemeral/token.json
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
       interval: 30s
@@ -42,3 +47,9 @@ volumes:
       type: none
       o: bind
       device: ${MODEL_ARTIFACTS_HOST_PATH:-./model_artifacts}
+  kis_token:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${KIS_TOKEN_HOST_PATH:-./ephemeral}
