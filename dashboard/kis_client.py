@@ -225,19 +225,25 @@ class KISDashboardClient:
         self,
         stock_code: str,
         time_unit: str = "1",
+        days: int = 1,
     ) -> pd.DataFrame:
-        """Fetch intraday minute-bar OHLCV for the current/last trading day.
+        """Fetch intraday minute-bar OHLCV.
 
         ``time_unit``: minute interval — one of '1', '3', '5', '10', '15', '30', '60'.
+        ``days``: number of trading days of minute data to fetch.
 
         The KIS endpoint returns bars in descending time order, up to ~30
-        bars per call.  This method pages backwards until the full trading
-        day is collected and returns a DataFrame sorted ascending by time.
+        bars per call.  This method pages backwards until the requested
+        trading days are collected and returns a DataFrame sorted ascending
+        by time.
         """
         all_rows: list[dict] = []
         hour_cursor = "160000"          # start from market close (16:00)
+        sessions_seen = 0
+        prev_date = None
 
-        for _ in range(30):             # safety cap on pagination
+        max_pages = 30 * days           # scale pagination cap to days requested
+        for _ in range(max_pages):
             payload = self._get(
                 "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
                 "FHKST03010200",
@@ -246,7 +252,7 @@ class KISDashboardClient:
                     "FID_INPUT_ISCD": stock_code,
                     "FID_ETC_CLS_CODE": time_unit,
                     "FID_INPUT_HOUR_1": hour_cursor,
-                    "FID_PW_DATA_INCU_YN": "N",
+                    "FID_PW_DATA_INCU_YN": "Y",
                 },
             )
             output2 = payload.get("output2", [])
@@ -255,9 +261,18 @@ class KISDashboardClient:
 
             for r in output2:
                 hhmm = r.get("stck_cntg_hour", "")
+                bsop_date = r.get("stck_bsop_date", "")
                 if not hhmm:
                     continue
+
+                # Track session boundaries (date changes)
+                if bsop_date and bsop_date != prev_date:
+                    if prev_date is not None:
+                        sessions_seen += 1
+                    prev_date = bsop_date
+
                 all_rows.append({
+                    "Date": bsop_date,
                     "Time": hhmm,
                     "Open": self._int(r.get("stck_oprc")),
                     "High": self._int(r.get("stck_hgpr")),
@@ -266,9 +281,13 @@ class KISDashboardClient:
                     "Volume": self._int(r.get("cntg_vol")),
                 })
 
+            # Stop if we have collected enough sessions
+            if sessions_seen >= days:
+                break
+
             # Move cursor to the earliest time in this batch to page further
             earliest = output2[-1].get("stck_cntg_hour", "")
-            if earliest <= "090000" or earliest >= hour_cursor:
+            if earliest >= hour_cursor:
                 break
             hour_cursor = earliest
 
@@ -277,9 +296,9 @@ class KISDashboardClient:
             return df
 
         # Deduplicate (overlapping page boundaries) and sort ascending
-        df = df.drop_duplicates(subset="Time", keep="first")
-        df["Date"] = pd.to_datetime(df["Time"], format="%H%M%S")
-        df = df.sort_values("Date").reset_index(drop=True)
+        df = df.drop_duplicates(subset=["Date", "Time"], keep="first")
+        df["Datetime"] = pd.to_datetime(df["Date"] + df["Time"], format="%Y%m%d%H%M%S")
+        df = df.sort_values("Datetime").reset_index(drop=True)
         return df
 
     def collect_realtime_ticks(
