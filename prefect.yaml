@@ -40,9 +40,6 @@ deployments:
       Fetches realtime + incremental daily data for all active tickers.
     work_pool:
       name: proxmox-local-pool
-      job_variables:
-        env:
-          PREFECT_API_URL: "{{ $PREFECT_API_URL }}"
     schedules:
       - cron: "*/5 9-15 * * 1-5"
         timezone: "Asia/Tokyo"
@@ -64,9 +61,6 @@ deployments:
       for every active ticker after all major markets have closed.
     work_pool:
       name: proxmox-local-pool
-      job_variables:
-        env:
-          PREFECT_API_URL: "{{ $PREFECT_API_URL }}"
     schedules:
       - cron: "0 18 * * *"
         timezone: "Asia/Tokyo"
@@ -88,9 +82,6 @@ deployments:
       Korea Investment & Securities Open API and saves it to disk.
     work_pool:
       name: proxmox-local-pool
-      job_variables:
-        env:
-          PREFECT_API_URL: "{{ $PREFECT_API_URL }}"
     schedules:
       - cron: "0 7 * * *"
         timezone: "Asia/Tokyo"
