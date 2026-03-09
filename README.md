@@ -10,7 +10,7 @@ Compose on Proxmox / TrueNAS SCALE.
 
 ## Features
 
-- **Prefect Orchestration**: Two scheduled flows replace legacy APScheduler — KRX realtime (5-min, M-F 09:00–15:30 JST) and Daily Batch (18:00 JST)
+- **Prefect Orchestration**: Three scheduled flows replace legacy APScheduler — KRX realtime (5-min, M-F 09:00–15:30 JST), Daily Batch (18:00 JST), and KIS Token Renewal (07:00 JST daily)
 - **Domain-Driven Monorepo**: `shared/`, `ingestion/`, `models/`, `dashboard/` with a PEP 621 `pyproject.toml` managed by `uv`
 - **Technical Analysis**: RSI (14), MACD (12/26/9), Bollinger Bands (20, 2), ATR (14), rolling volatility, lagged log-returns
 - **Four XGBoost Directional Models**: Single-pass feature engineering → 4 concurrent `predict_proba` calls
@@ -31,7 +31,7 @@ Compose on Proxmox / TrueNAS SCALE.
 ```
 momentum-ops/
 ├── pyproject.toml                  # PEP 621 — uv-managed deps with optional groups
-├── prefect.yaml                    # Prefect deployments: krx-realtime + daily-batch
+├── prefect.yaml                    # Prefect deployments: krx-realtime + daily-batch + kis-token-renewal
 ├── docker-compose.yml              # Local dev — all-in-one (postgres, prefect, worker, dashboard)
 ├── shared/                         # Cross-cutting glue layer
 │   ├── config.py                   # Pydantic BaseSettings (DB_URL, API keys, app config)
@@ -201,6 +201,7 @@ streamlit run dashboard/app.py
 |------------|----------|-------------|
 | `krx-realtime` | `*/5 9-15 * * 1-5` (Asia/Tokyo) | Realtime + incremental daily during KRX trading hours |
 | `daily-batch` | `0 18 * * *` (Asia/Tokyo) | Full ingestion + inference after all markets close |
+| `kis-token-renewal` | `0 7 * * *` (Asia/Tokyo) | Daily KIS Open API access-token renewal |
 
 ## Training
 
