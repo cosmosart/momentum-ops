@@ -49,9 +49,18 @@ st.markdown(
 # Shared Sidebar (rendered on every page via import)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def render_sidebar() -> str:
+def render_sidebar(region_filter: str | None = None, default_override: str | None = None) -> str:
     """
     Render the sidebar controls shared by all pages.
+
+    Parameters
+    ----------
+    region_filter : str | None
+        If set (e.g. ``"KR"``), restrict the ticker dropdown to that
+        region only.
+    default_override : str | None
+        Preferred default ticker for this page.  Takes precedence over
+        ``settings.default_ticker`` when the symbol exists in the list.
 
     Returns the currently-selected ticker symbol and persists it in
     ``st.session_state["ticker"]``.
@@ -61,8 +70,12 @@ def render_sidebar() -> str:
 
         # ── Ticker selection ──────────────────────────────────────────────
         ticker_map: dict[str, str] = _load_ticker_map()  # {symbol: region}
+        if region_filter:
+            ticker_map = {s: r for s, r in ticker_map.items() if r == region_filter}
         ticker_list = list(ticker_map.keys())
-        default_ticker: str = settings.default_ticker
+        default_ticker = default_override if default_override and default_override in ticker_map else settings.default_ticker
+        if default_ticker not in ticker_map and ticker_list:
+            default_ticker = ticker_list[0]
 
         if ticker_list:
             default_index = (

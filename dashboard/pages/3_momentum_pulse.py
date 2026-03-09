@@ -19,6 +19,6 @@ if _REPO_ROOT not in sys.path:
 from dashboard.app import render_sidebar
 from dashboard.momentum_pulse_tab import render_momentum_pulse_tab
 
-ticker = render_sidebar()
+ticker = render_sidebar(region_filter="KR", default_override="069500")
 
 render_momentum_pulse_tab(ticker)
