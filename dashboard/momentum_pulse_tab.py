@@ -95,17 +95,30 @@ def render_momentum_pulse_tab(ticker: str) -> None:
     st.header(f"Momentum Pulse — {ticker}")
 
     # ── Controls ──────────────────────────────────────────────────────────
-    col_period, col_ma_type, col_ma_select, col_bb, col_vwap, col_sr_toggle, col_sr_levels = st.columns(
-        [1.5, 1, 3, 1, 0.8, 1.5, 0.5]
+    col_tf, col_period, col_ma_type, col_ma_select, col_bb, col_vwap, col_sr_toggle, col_sr_levels = st.columns(
+        [1.2, 1.5, 1, 3, 1, 0.8, 1.5, 0.5]
     )
 
-    with col_period:
-        history_size = st.selectbox(
-            "History (bars)",
-            options=[30, 50, 100, 150, 200],
-            index=2,
-            help="Number of daily bars to fetch from KIS",
+    with col_tf:
+        timeframe = st.selectbox(
+            "Timeframe",
+            options=["1min", "Daily"],
+            index=0,
+            help="1min: intraday minute bars for the last trading session. Daily: daily bars.",
         )
+        is_intraday = timeframe == "1min"
+
+    with col_period:
+        if is_intraday:
+            history_size = None  # minute endpoint returns a full day
+            st.caption("Full session")
+        else:
+            history_size = st.selectbox(
+                "History (bars)",
+                options=[30, 50, 100, 150, 200],
+                index=2,
+                help="Number of daily bars to fetch from KIS",
+            )
 
     with col_ma_type:
         ma_types = st.multiselect(
@@ -138,7 +151,10 @@ def render_momentum_pulse_tab(ticker: str) -> None:
         try:
             quote = client.get_realtime_price(ticker)
             investor = client.get_investor_snapshot(ticker)
-            df = client.get_daily_ohlcv(ticker, period_code="D", count=history_size)
+            if is_intraday:
+                df = client.get_minute_ohlcv(ticker, time_unit="1")
+            else:
+                df = client.get_daily_ohlcv(ticker, period_code="D", count=history_size)
         except RuntimeError as exc:
             st.error(f"KIS API call failed: {exc}")
             return
@@ -268,7 +284,10 @@ def render_momentum_pulse_tab(ticker: str) -> None:
     df = df.reset_index(drop=True)
     x_idx = df.index
 
-    tick_labels = df["Date"].dt.strftime("%Y-%m-%d")
+    if is_intraday:
+        tick_labels = df["Date"].dt.strftime("%H:%M")
+    else:
+        tick_labels = df["Date"].dt.strftime("%Y-%m-%d")
     n_ticks = min(len(df), 40)
     tick_step = max(1, len(df) // n_ticks)
     tick_vals = list(range(0, len(df), tick_step))

@@ -221,6 +221,67 @@ class KISDashboardClient:
             df = df.sort_values("Date").reset_index(drop=True)
         return df
 
+    def get_minute_ohlcv(
+        self,
+        stock_code: str,
+        time_unit: str = "1",
+    ) -> pd.DataFrame:
+        """Fetch intraday minute-bar OHLCV for the current/last trading day.
+
+        ``time_unit``: minute interval — one of '1', '3', '5', '10', '15', '30', '60'.
+
+        The KIS endpoint returns bars in descending time order, up to ~30
+        bars per call.  This method pages backwards until the full trading
+        day is collected and returns a DataFrame sorted ascending by time.
+        """
+        all_rows: list[dict] = []
+        hour_cursor = "160000"          # start from market close (16:00)
+
+        for _ in range(30):             # safety cap on pagination
+            payload = self._get(
+                "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
+                "FHKST03010200",
+                {
+                    "FID_COND_MRKT_DIV_CODE": "J",
+                    "FID_INPUT_ISCD": stock_code,
+                    "FID_ETC_CLS_CODE": "",
+                    "FID_INPUT_HOUR_1": hour_cursor,
+                    "FID_PW_DATA_INCU_YN": "N",
+                },
+            )
+            output2 = payload.get("output2", [])
+            if not output2:
+                break
+
+            for r in output2:
+                hhmm = r.get("stck_cntg_hour", "")
+                if not hhmm:
+                    continue
+                all_rows.append({
+                    "Time": hhmm,
+                    "Open": self._int(r.get("stck_oprc")),
+                    "High": self._int(r.get("stck_hgpr")),
+                    "Low": self._int(r.get("stck_lwpr")),
+                    "Close": self._int(r.get("stck_prpr")),
+                    "Volume": self._int(r.get("cntg_vol")),
+                })
+
+            # Move cursor to the earliest time in this batch to page further
+            earliest = output2[-1].get("stck_cntg_hour", "")
+            if earliest <= "090000" or earliest >= hour_cursor:
+                break
+            hour_cursor = earliest
+
+        df = pd.DataFrame(all_rows)
+        if df.empty:
+            return df
+
+        # Deduplicate (overlapping page boundaries) and sort ascending
+        df = df.drop_duplicates(subset="Time", keep="first")
+        df["Date"] = pd.to_datetime(df["Time"], format="%H%M%S")
+        df = df.sort_values("Date").reset_index(drop=True)
+        return df
+
     def collect_realtime_ticks(
         self,
         stock_code: str,
