@@ -12,7 +12,7 @@
 #   docker compose -f docker-compose.prefect.yml --env-file .env up -d
 #
 # After first boot:
-#   PREFECT_API_URL=http://localhost:4200/api ./scripts/bootstrap_prefect.sh
+#   docker exec momentum-worker prefect deploy --all
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:

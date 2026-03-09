@@ -61,12 +61,6 @@ class Settings(BaseSettings):
     default_ticker: str = Field(
         default="AAPL", description="Fallback ticker when none is specified"
     )
-    scheduler_timezone: str = Field(
-        default="UTC", description="Timezone for scheduler cron expressions"
-    )
-    update_interval_minutes: int = Field(
-        default=5, ge=1, description="Minutes between ingestion cycles"
-    )
     model_artifacts_dir: str = Field(
         default="model_artifacts",
         description="Path to the directory containing trained XGBoost JSON artefacts",
