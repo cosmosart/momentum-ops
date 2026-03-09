@@ -54,6 +54,7 @@ COPY prefect.yaml ./
 
 # ── Create non-root user ─────────────────────────────────────────────────
 RUN useradd -m -u 1000 worker \
+    && mkdir -p /opt/momentum-ops/ephemeral \
     && chown -R worker:worker /opt/momentum-ops
 USER worker
 
