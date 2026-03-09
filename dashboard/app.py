@@ -150,10 +150,11 @@ def main() -> None:
         "### Quick Links\n"
         "| Page | Description |\n"
         "| --- | --- |\n"
-        "| **Directional Outlook** | XGBoost probability scores across four strategy horizons |\n"
-        "| **Momentum Analysis** | RSI, MACD, and Bollinger Band technical charts |\n"
-        "| **AI Advisor** | Generate structured LLM prompts for secondary analysis |\n"
-        "| **Manage Tickers** | Add, deactivate, or review tracked symbols |\n"
+        "| **Trend Radar** | XGBoost probability scores across four strategy horizons |\n"
+        "| **Momentum Core** | RSI, MACD, and Bollinger Band technical charts |\n"
+        "| **Co-Pilot** | Generate structured LLM prompts for secondary analysis |\n"
+        "| **Config** | Add, deactivate, or review tracked symbols |\n"
+        "| **Momentum Pulse** | Real-time KIS-powered monitoring for Korean equities |\n"
     )
 
 
