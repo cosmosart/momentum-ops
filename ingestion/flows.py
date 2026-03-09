@@ -419,6 +419,74 @@ def daily_batch_flow() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# KIS Token Renewal
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@task(
+    name="request-kis-token",
+    retries=3,
+    retry_delay_seconds=60,
+    description="Request a new access token from the KIS Open API.",
+)
+def request_kis_token() -> dict[str, Any]:
+    """Call the KIS OAuth endpoint and return the full token response."""
+    import requests  # local import — only needed by this task
+
+    log = get_run_logger()
+    url = f"{settings.kis_api_base_url}/oauth2/tokenP"
+    payload = {
+        "grant_type": "client_credentials",
+        "appkey": settings.kis_app_key,
+        "appsecret": settings.kis_app_secret,
+    }
+    resp = requests.post(
+        url,
+        headers={"Content-Type": "application/json"},
+        json=payload,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    log.info("KIS token obtained (expires: %s)", data.get("access_token_token_expired", "unknown"))
+    return data
+
+
+@task(
+    name="save-kis-token",
+    description="Persist the KIS token JSON to disk.",
+)
+def save_kis_token(token_data: dict[str, Any]) -> None:
+    """Write *token_data* as JSON to :pyattr:`settings.kis_token_path`."""
+    import pathlib
+
+    log = get_run_logger()
+    path = pathlib.Path(settings.kis_token_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(token_data, indent=2, ensure_ascii=False))
+    log.info("KIS token saved to %s", path)
+
+
+@flow(
+    name="kis-token-renewal-flow",
+    log_prints=True,
+    description=(
+        "Daily KIS access-token renewal. "
+        "Runs at 07:00 JST to ensure a fresh token is available before market open."
+    ),
+)
+def kis_token_renewal_flow() -> None:
+    """Obtain a fresh KIS access token and save it to disk."""
+    log = get_run_logger()
+    if not settings.kis_app_key or not settings.kis_app_secret:
+        log.error("KIS_APP_KEY / KIS_APP_SECRET not configured — skipping token renewal")
+        return
+    token_data = request_kis_token()
+    save_kis_token(token_data)
+    log.info("KIS token renewal complete")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # CLI convenience (``python -m ingestion.flows``)
 # ──────────────────────────────────────────────────────────────────────────────
 

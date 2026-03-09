@@ -355,7 +355,7 @@ def render_momentum_tab(ticker: str):
             shared_xaxes=True,
             vertical_spacing=0.05,
             subplot_titles=('Price', 'Volume', 'RSI', 'MACD'),
-            row_heights=[1.0, 0.2, 0.25, 0.375],
+            row_heights=[1.0, 0.2, 0.2, 0.375],
             specs=[[{"secondary_y": False}],
                    [{"secondary_y": True}],
                    [{"secondary_y": False}],

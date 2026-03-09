@@ -71,3 +71,24 @@ deployments:
       - batch
       - daily
     enforce_parameter_schema: true
+
+  # ┌──────────────────────────────────────────────────────────────────────────┐
+  # │  KIS Token Renewal — 07:00 JST daily                                   │
+  # └──────────────────────────────────────────────────────────────────────────┘
+  - name: kis-token-renewal
+    entrypoint: ingestion/flows.py:kis_token_renewal_flow
+    description: >-
+      Daily KIS access-token renewal. Requests a fresh token from the
+      Korea Investment & Securities Open API and saves it to disk.
+    work_pool:
+      name: proxmox-local-pool
+    schedules:
+      - cron: "0 7 * * *"
+        timezone: "Asia/Tokyo"
+        active: true
+    parameters: {}
+    tags:
+      - kis
+      - token
+      - daily
+    enforce_parameter_schema: true

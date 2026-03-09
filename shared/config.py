@@ -77,6 +77,22 @@ class Settings(BaseSettings):
         description="Minimum daily rows required for reliable feature engineering",
     )
 
+    # ── KIS (Korea Investment & Securities) ────────────────────────────────
+    kis_app_key: Optional[str] = Field(
+        default=None, description="KIS Open API application key"
+    )
+    kis_app_secret: Optional[str] = Field(
+        default=None, description="KIS Open API application secret"
+    )
+    kis_api_base_url: str = Field(
+        default="https://openapi.koreainvestment.com:9443",
+        description="KIS Open API base URL",
+    )
+    kis_token_path: str = Field(
+        default="ephemeral/token.json",
+        description="File path where the KIS access token JSON is saved",
+    )
+
     # ── Prefect ───────────────────────────────────────────────────────────
     prefect_api_url: Optional[str] = Field(
         default=None, description="Prefect API endpoint (e.g. http://prefect:4200/api)"
