@@ -102,11 +102,11 @@ def render_momentum_pulse_tab(ticker: str) -> None:
     with col_tf:
         timeframe = st.selectbox(
             "Timeframe",
-            options=["1min", "Daily"],
+            options=["5min", "10min", "15min", "30min", "60min", "240min", "Daily"],
             index=0,
-            help="1min: intraday minute bars for the last trading session. Daily: daily bars.",
+            help="Intraday minute bars for the last trading session, or Daily bars.",
         )
-        is_intraday = timeframe == "1min"
+        is_intraday = timeframe != "Daily"
 
     with col_period:
         if is_intraday:
@@ -152,7 +152,8 @@ def render_momentum_pulse_tab(ticker: str) -> None:
             quote = client.get_realtime_price(ticker)
             investor = client.get_investor_snapshot(ticker)
             if is_intraday:
-                df = client.get_minute_ohlcv(ticker, time_unit="1")
+                time_unit = timeframe.replace("min", "")
+                df = client.get_minute_ohlcv(ticker, time_unit=time_unit)
             else:
                 df = client.get_daily_ohlcv(ticker, period_code="D", count=history_size)
         except RuntimeError as exc:

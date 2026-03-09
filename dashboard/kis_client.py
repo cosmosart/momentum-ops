@@ -244,7 +244,7 @@ class KISDashboardClient:
                 {
                     "FID_COND_MRKT_DIV_CODE": "J",
                     "FID_INPUT_ISCD": stock_code,
-                    "FID_ETC_CLS_CODE": "",
+                    "FID_ETC_CLS_CODE": time_unit,
                     "FID_INPUT_HOUR_1": hour_cursor,
                     "FID_PW_DATA_INCU_YN": "N",
                 },
