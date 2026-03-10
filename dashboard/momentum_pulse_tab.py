@@ -164,35 +164,34 @@ def render_momentum_pulse_tab(ticker: str) -> None:
             return
 
     time_unit = timeframe.replace("min", "")
-
-    # Always fetch today's live data from KIS
-    with st.spinner("Fetching today's intraday bars from KIS …"):
-        try:
-            df_today = client.get_minute_ohlcv(ticker, time_unit=time_unit)
-        except RuntimeError as exc:
-            st.error(f"KIS minute OHLCV failed: {exc}")
-            return
+    interval_val = int(time_unit)
 
     if history_days == 1:
-        df = df_today
-        if not df.empty and df["Datetime"].dt.tz is not None:
-            df["Datetime"] = df["Datetime"].dt.tz_localize(None)
+        # ── Daily View: Fetch live intraday bars directly from KIS ──
+        with st.spinner("Fetching today's live intraday bars from KIS …"):
+            try:
+                df = client.get_minute_ohlcv(ticker, time_unit=time_unit)
+                if not df.empty and df["Datetime"].dt.tz is not None:
+                    df["Datetime"] = df["Datetime"].dt.tz_localize(None)
+            except RuntimeError as exc:
+                st.error(f"KIS minute OHLCV failed: {exc}")
+                return
     else:
-        # 1. Fetch 1-minute historical data from the local PostgreSQL database
-        with st.spinner("Fetching historical minute data from local DB …"):
+        # ── Swing View (2-5+ Days): Fetch ALL data strictly from local PostgreSQL ──
+        # Bypasses the KIS API to eliminate latency. Data relies on the Prefect ingestion loop.
+        with st.spinner("Fetching multi-day minute data from local DB …"):
             from database.db import Database
             import pandas.io.sql as psql
             
             db = Database()
             if not db.connect():
                 st.error("Failed to connect to local database for historical minute data.")
-                df_hist = pd.DataFrame()
+                df = pd.DataFrame()
             else:
                 try:
+                    # Over-fetch slightly to account for weekends
                     lookback_days = int(history_days * 1.5) + 2
-                    interval_val = int(time_unit) # E.g., 10 or 15 from the dropdown
                     
-                    # We ALWAYS fetch the 1-minute baseline from the DB
                     query = """
                         SELECT timestamp as "Datetime", 
                                open_price as "Open", 
@@ -211,52 +210,34 @@ def render_momentum_pulse_tab(ticker: str) -> None:
                         "lookback": f"{lookback_days} days"
                     }
                     
-                    df_hist = psql.read_sql(query, db.conn, params=params)
+                    df = psql.read_sql(query, db.conn, params=params)
                     
                 except Exception as exc:
                     st.error(f"Local database fetch failed: {exc}")
-                    df_hist = pd.DataFrame()
+                    df = pd.DataFrame()
                 finally:
                     db.close()
 
-        # 2. Timezone Alignment, Dynamic Resampling, and Trimming
-        if not df_hist.empty:
-            # A. Convert DB UTC to KST
-            df_hist["Datetime"] = pd.to_datetime(df_hist["Datetime"]).dt.tz_convert('Asia/Seoul').dt.tz_localize(None)
-            
-            # B. Dynamically resample 1-min data to the target timeframe (e.g., 10min, 15min)
-            if interval_val > 1:
-                df_hist = df_hist.set_index("Datetime").resample(f"{interval_val}min").agg({
-                    "Open": "first",
-                    "High": "max",
-                    "Low": "min",
-                    "Close": "last",
-                    "Volume": "sum"
-                }).dropna().reset_index()
-            
-            # C. Ensure we strictly hold the requested number of trading days
-            unique_dates = sorted(df_hist["Datetime"].dt.date.unique())
-            if len(unique_dates) > history_days:
-                keep_dates = unique_dates[-history_days:]
-                df_hist = df_hist[df_hist["Datetime"].dt.date.isin(keep_dates)]
-
-        if not df_today.empty and df_today["Datetime"].dt.tz is not None:
-             df_today["Datetime"] = df_today["Datetime"].dt.tz_localize(None)
-
-        # 3. Seamless Concatenation
-        common_cols = ["Datetime", "Open", "High", "Low", "Close", "Volume"]
-        parts = []
-        if not df_hist.empty:
-            parts.append(df_hist[[c for c in common_cols if c in df_hist.columns]])
-        if not df_today.empty:
-            parts.append(df_today[[c for c in common_cols if c in df_today.columns]])
-
-        if parts:
-            df = pd.concat(parts, ignore_index=True)
-            df = df.drop_duplicates(subset=["Datetime"], keep="last")
-            df = df.sort_values("Datetime").reset_index(drop=True)
-        else:
-            df = pd.DataFrame(columns=common_cols)
+            # Timezone Alignment, Resampling, and Trimming
+            if not df.empty:
+                # 1. Convert DB UTC to KST
+                df["Datetime"] = pd.to_datetime(df["Datetime"]).dt.tz_convert('Asia/Seoul').dt.tz_localize(None)
+                
+                # 2. Dynamically resample 1-min baseline to target timeframe
+                if interval_val > 1:
+                    df = df.set_index("Datetime").resample(f"{interval_val}min").agg({
+                        "Open": "first",
+                        "High": "max",
+                        "Low": "min",
+                        "Close": "last",
+                        "Volume": "sum"
+                    }).dropna().reset_index()
+                
+                # 3. Trim exactly to requested trading days
+                unique_dates = sorted(df["Datetime"].dt.date.unique())
+                if len(unique_dates) > history_days:
+                    keep_dates = unique_dates[-history_days:]
+                    df = df[df["Datetime"].dt.date.isin(keep_dates)]
 
     if df.empty:
         st.warning("No OHLCV data returned for this ticker / period.")
