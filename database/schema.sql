@@ -56,6 +56,24 @@ CREATE INDEX IF NOT EXISTS idx_price_daily_ticker ON price_daily(ticker);
 CREATE INDEX IF NOT EXISTS idx_price_daily_date ON price_daily(date);
 CREATE INDEX IF NOT EXISTS idx_price_daily_region ON price_daily(region);
 
+-- KIS Data: Minute-level OHLCV for Korean market (3m, 5m, 15m intervals)
+
+CREATE TABLE IF NOT EXISTS kr_minute_ohlcv (
+    ticker VARCHAR(10) NOT NULL,
+    interval_min INTEGER NOT NULL, -- Defines the timeframe resolution (e.g., 3, 5, 15)
+    timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+    open_price NUMERIC(15, 2) NOT NULL,
+    high_price NUMERIC(15, 2) NOT NULL,
+    low_price NUMERIC(15, 2) NOT NULL,
+    close_price NUMERIC(15, 2) NOT NULL,
+    volume BIGINT NOT NULL,
+    accumulated_value BIGINT,
+    PRIMARY KEY (ticker, interval_min, timestamp)
+);
+
+-- Index for fast time-series retrieval by your dashboard
+CREATE INDEX idx_kr_minute_ohlcv_ticker_time ON kr_minute_ohlcv(ticker, timestamp DESC);
+
 -- ==============================================================================
 -- 3. FUNDAMENTAL & SENTIMENT DATA (NEW)
 -- ==============================================================================

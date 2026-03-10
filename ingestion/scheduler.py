@@ -25,6 +25,10 @@ from models.models import calculate_indicators, FourModelPredictor
 from models.features import engineer_features
 from shared.config import to_yf_symbol
 
+from prefect.deployments import Deployment
+from prefect.server.schemas.schedules import CronSchedule
+from .flows import kr_minute_ingestion_flow
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -271,7 +275,7 @@ class DataScheduler:
     def start(self):
         """Start the scheduler."""
         # Schedule the master ingestion job
-        update_interval = int(os.getenv('UPDATE_INTERVAL_MINUTES', 5))
+        update_interval = int(os.getenv('UPDATE_INTERVAL_MINUTES', 30))
         
         self.scheduler.add_job(
             func=self.run_ingestion_cycle,
@@ -293,3 +297,23 @@ class DataScheduler:
         self.scheduler.shutdown()
         self.db.close()
         logger.info("Scheduler stopped")
+
+# Runs every 3 minutes from 09:00 to 15:00, Monday through Friday.
+# (Note: You may want an explicit trigger for the 15:00-15:30 window depending on how aggressive the closing cross trades are for your strategy).
+kr_market_schedule = CronSchedule(
+    cron="*/5 9-15 * * 1-5", 
+    timezone="Asia/Seoul"
+)
+
+deployment = Deployment.build_from_flow(
+    flow=kr_minute_ingestion_flow,
+    name="kr-swing-5min-ingestion",
+    parameters={"tickers": ["069500",
+                            "122630",
+                            "229200"]}, # E.g., Samsung, SK Hynix, Hanmi Semi
+    schedule=kr_market_schedule,
+    work_queue_name="default"
+)
+
+if __name__ == "__main__":
+    deployment.apply()

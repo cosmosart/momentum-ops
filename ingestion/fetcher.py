@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 import yfinance as yf
 import pandas as pd
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -102,3 +103,57 @@ class DataFetcher:
         except Exception as e:
             logger.error(f"Failed to get info for {self.ticker}: {e}")
             return {}
+
+class KISFetcher:
+    def __init__(self, api_key: str, api_secret: str, token: str):
+        self.base_url = "https://openapi.koreainvestment.com:9443"
+        self.headers = {
+            "Content-Type": "application/json",
+            "authorization": f"Bearer {token}",
+            "appkey": api_key,
+            "appsecret": api_secret,
+            "tr_id": "FHKST03010200" # TR_ID for domestic stock intraday minute chart
+        }
+
+    def fetch_minute_data(self, ticker: str, interval_min: int = 3) -> pd.DataFrame:
+        url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice"
+        
+        # Grabs the most recent 30 entries from the current time
+        params = {
+            "FID_ETC_CLS_CODE": "",
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_INPUT_ISCD": ticker,
+            "FID_INPUT_HOUR_1": datetime.now().strftime("%H%M%00"),
+            "FID_PW_DATA_INCU_YN": "N" # Exclude extended hours for clean swing signals
+        }
+        
+        response = httpx.get(url, headers=self.headers, params=params)
+        response.raise_for_status()
+        
+        candles = response.json().get("output2", [])
+        df = pd.DataFrame(candles)
+        
+        if df.empty:
+            return df
+            
+        # Parse KIS date (YYYYMMDD) and hour (HHMMSS) strings
+        df['datetime_str'] = df['stck_bsop_date'] + df['stck_cntg_hour']
+        df['timestamp'] = pd.to_datetime(df['datetime_str'], format='%Y%m%d%H%M%S').dt.tz_localize('Asia/Seoul')
+        
+        df = df.rename(columns={
+            'stck_oprc': 'open_price',
+            'stck_hgpr': 'high_price',
+            'stck_lwpr': 'low_price',
+            'stck_prpr': 'close_price',
+            'cntg_vol': 'volume',
+            'acml_tr_pbmn': 'accumulated_value'
+        })
+        
+        # Cast to correct types
+        numeric_cols = ['open_price', 'high_price', 'low_price', 'close_price', 'volume', 'accumulated_value']
+        df[numeric_cols] = df[numeric_cols].astype(float)
+        
+        df['ticker'] = ticker
+        df['interval_min'] = interval_min
+        
+        return df[['ticker', 'interval_min', 'timestamp'] + numeric_cols]
