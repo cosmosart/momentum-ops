@@ -283,6 +283,9 @@ class KISDashboardClient:
         df["Datetime"] = pd.to_datetime(
             df["Date"] + df["Time"], format="%Y%m%d%H%M%S",
         )
+        # Drop bars whose timestamp is in the future (KIS pre-fills slots)
+        now = pd.Timestamp.now()
+        df = df[df["Datetime"] <= now]
         df = df.sort_values("Datetime").reset_index(drop=True)
         return df
 
