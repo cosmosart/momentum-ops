@@ -515,57 +515,79 @@ def load_kis_token() -> str:
     name="fetch-and-store-ticker",
     retries=3, 
     retry_delay_seconds=5,
-    description="Fetch 3-min OHLCV data and upsert into Postgres."
+    description="Fetch 3-min OHLCV data and upsert into Postgres using shared pool."
 )
-def fetch_and_store_ticker(ticker: str, fetcher: KISFetcher):
+def fetch_and_store_ticker(ticker: str, fetcher: KISFetcher) -> None:
     log = get_run_logger()
     df = fetcher.fetch_minute_data(ticker)
     
     if df.empty:
-        log.warning(f"No minute data returned for {ticker}.")
+        log.warning("No minute data returned for %s.", ticker)
         return
         
-    records = df.to_dict(orient='records')
+    # Prepare tuples for standard executemany insertion
+    rows = [
+        (
+            r["ticker"],
+            int(r["interval_min"]),
+            r["timestamp"],
+            float(r["open_price"]),
+            float(r["high_price"]),
+            float(r["low_price"]),
+            float(r["close_price"]),
+            int(r["volume"]),
+            float(r["accumulated_value"]) if pd.notna(r["accumulated_value"]) else 0.0
+        )
+        for _, r in df.iterrows()
+    ]
     
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
+    query = """
+        INSERT INTO kr_minute_ohlcv 
+            (ticker, interval_min, timestamp, open_price, high_price, low_price, close_price, volume, accumulated_value)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (ticker, interval_min, timestamp) DO NOTHING
+    """
+    
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(query, rows)
+        conn.commit()
+        
+    log.info("Upserted minute data for %s. Evaluated %d rows.", ticker, len(rows))
 
-    # Use SQLAlchemy engine for SQLAlchemy Core statements
-    engine = create_engine(settings.database_url)
-    metadata = MetaData()
-    table = Table('kr_minute_ohlcv', metadata, autoload_with=engine)
-    
-    stmt = insert(table).values(records)
-    do_nothing_stmt = stmt.on_conflict_do_nothing(
-        index_elements=['ticker', 'interval_min', 'timestamp']
-    )
-    
-    with engine.begin() as conn:
-        result = conn.execute(do_nothing_stmt)
-        log.info(f"Upserted data for {ticker}. Rows affected: {result.rowcount}")
 
 @flow(
     name="kr-minute-ingestion-flow",
     log_prints=True,
     description="Pulls continuous KR market minute data using the daily renewed token."
 )
-def kr_minute_ingestion_flow(tickers: list[str]):
+def kr_minute_ingestion_flow() -> None:
     log = get_run_logger()
     
-    # 1. Load the active token dynamically
+    # 1. Dynamically fetch active KR tickers
+    active_tickers = fetch_active_tickers()
+    kr_tickers = [t["symbol"] for t in active_tickers if t["region"] == "KR"]
+    
+    if not kr_tickers:
+        log.warning("No active KR tickers found — aborting minute ingestion.")
+        return
+    
+    # 2. Load the active token dynamically
     active_token = load_kis_token()
     
-    # 2. Initialize the fetcher with configuration
-    if settings.kis_app_key is None or settings.kis_app_secret is None:
+    # 3. Initialize the fetcher
+    if not settings.kis_app_key or not settings.kis_app_secret:
         raise ValueError("KIS API key and secret must be set in settings.")
+        
     fetcher = KISFetcher(
         api_key=settings.kis_app_key,
         api_secret=settings.kis_app_secret,
         token=active_token
     )
     
-    # 3. Execute fetching for all target tickers
-    for ticker in tickers:
+    # 4. Execute fetching
+    log.info("Starting minute ingestion cycle for %d KR tickers.", len(kr_tickers))
+    for ticker in kr_tickers:
         fetch_and_store_ticker(ticker, fetcher)
     
     log.info("KR minute ingestion cycle complete.")

@@ -175,46 +175,63 @@ def render_momentum_pulse_tab(ticker: str) -> None:
 
     if history_days == 1:
         df = df_today
+        if not df.empty and df["Datetime"].dt.tz is not None:
+            df["Datetime"] = df["Datetime"].dt.tz_localize(None)
     else:
-        # Previous days: yfinance; today: KIS live bars
-        import yfinance as yf
-
-        _yf_interval_map = {
-            "1min": "1m", "5min": "5m", "10min": "15m", "15min": "15m",
-            "30min": "30m", "60min": "1h", "240min": "1h",
-        }
-        yf_interval = _yf_interval_map[timeframe]
-        # Fetch extra days so we can strip today and still have enough history
-        yf_period = f"{history_days + 2}d"
-
-        with st.spinner(f"Fetching previous days from yfinance …"):
+        # 1. Fetch historical minute data from the local PostgreSQL database
+        with st.spinner("Fetching historical minute data from local DB …"):
             try:
-                ticker_obj = yf.Ticker(yf_symbol)
-                df_hist = ticker_obj.history(period=yf_period, interval=yf_interval)
+                # Import your DB utility here. Adjust the path if necessary.
+                from database.connection import get_connection 
+                import pandas.io.sql as psql
+                
+                engine = get_connection()
+                
+                # Over-fetch slightly (x1.5) to account for weekends and holidays
+                lookback_days = int(history_days * 1.5) + 2
+                interval_val = int(time_unit)
+                
+                # Parameterized query to prevent SQL injection and cache execution plans
+                query = """
+                    SELECT timestamp as "Datetime", 
+                           open_price as "Open", 
+                           high_price as "High", 
+                           low_price as "Low", 
+                           close_price as "Close", 
+                           volume as "Volume"
+                    FROM kr_minute_ohlcv
+                    WHERE ticker = %(ticker)s
+                      AND interval_min = %(interval_min)s
+                      AND timestamp >= NOW() - INTERVAL %(lookback)s
+                    ORDER BY timestamp ASC
+                """
+                params = {
+                    "ticker": ticker, 
+                    "interval_min": interval_val, 
+                    "lookback": f"{lookback_days} days"
+                }
+                
+                df_hist = psql.read_sql(query, engine, params=params)
+                
             except Exception as exc:
-                st.error(f"yfinance fetch failed: {exc}")
-                return
+                st.error(f"Local database fetch failed: {exc}")
+                df_hist = pd.DataFrame()
 
+        # 2. Timezone Alignment and Trimming
         if not df_hist.empty:
-            df_hist = df_hist.reset_index()
-            date_col = "Datetime" if "Datetime" in df_hist.columns else "Date"
-            df_hist = df_hist.rename(columns={date_col: "Datetime"})
-            df_hist["Datetime"] = pd.to_datetime(df_hist["Datetime"])
-            # Remove timezone info for merging
-            if df_hist["Datetime"].dt.tz is not None:
-                df_hist["Datetime"] = df_hist["Datetime"].dt.tz_localize(None)
-
-            # Strip today's data from yfinance — KIS has fresher today bars
-            today_str = pd.Timestamp.now().strftime("%Y-%m-%d")
-            df_hist = df_hist[df_hist["Datetime"].dt.strftime("%Y-%m-%d") < today_str]
-
-            # Keep only the requested number of previous days
-            if not df_hist.empty:
-                prev_dates = sorted(df_hist["Datetime"].dt.date.unique())
-                keep_dates = prev_dates[-(history_days - 1):]
+            # DB timestamps are UTC. Convert to KST to match Korean market display and df_today.
+            df_hist["Datetime"] = pd.to_datetime(df_hist["Datetime"]).dt.tz_convert('Asia/Seoul').dt.tz_localize(None)
+            
+            # Ensure we strictly hold the requested number of trading days
+            unique_dates = sorted(df_hist["Datetime"].dt.date.unique())
+            if len(unique_dates) > history_days:
+                keep_dates = unique_dates[-history_days:]
                 df_hist = df_hist[df_hist["Datetime"].dt.date.isin(keep_dates)]
 
-        # Normalize columns so both sides match
+        if not df_today.empty and df_today["Datetime"].dt.tz is not None:
+             df_today["Datetime"] = df_today["Datetime"].dt.tz_localize(None)
+
+        # 3. Seamless Concatenation
         common_cols = ["Datetime", "Open", "High", "Low", "Close", "Volume"]
         parts = []
         if not df_hist.empty:
@@ -224,6 +241,10 @@ def render_momentum_pulse_tab(ticker: str) -> None:
 
         if parts:
             df = pd.concat(parts, ignore_index=True)
+            
+            # The critical fix: By keeping 'last', the live data from df_today 
+            # gracefully overwrites any overlapping timestamps from the DB.
+            df = df.drop_duplicates(subset=["Datetime"], keep="last")
             df = df.sort_values("Datetime").reset_index(drop=True)
         else:
             df = pd.DataFrame(columns=common_cols)
