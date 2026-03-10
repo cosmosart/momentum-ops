@@ -110,7 +110,7 @@ def render_momentum_pulse_tab(ticker: str) -> None:
     with col_tf:
         timeframe = st.selectbox(
             "Timeframe",
-            options=["5min", "10min", "15min", "30min", "60min", "240min"],
+            options=["1min", "5min", "10min", "15min", "30min", "60min", "240min"],
             index=0,
             help="Intraday minute-bar interval.",
         )
@@ -177,7 +177,7 @@ def render_momentum_pulse_tab(ticker: str) -> None:
         import yfinance as yf
 
         _yf_interval_map = {
-            "5min": "5m", "10min": "15m", "15min": "15m",
+            "1min": "1m", "5min": "5m", "10min": "15m", "15min": "15m",
             "30min": "30m", "60min": "1h", "240min": "1h",
         }
         yf_interval = _yf_interval_map[timeframe]
