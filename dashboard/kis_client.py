@@ -290,7 +290,7 @@ class KISDashboardClient:
         ctx_nk = ""
 
         max_pages = 60 * days
-        for page in range(max_pages):
+        for _ in range(max_pages):
             payload, tr_cont_out, ctx_fk_out, ctx_nk_out = self._get_raw(
                 path, tr_id, base_params,
                 tr_cont=tr_cont, ctx_area_fk=ctx_fk, ctx_area_nk=ctx_nk,
