@@ -225,27 +225,20 @@ class KISDashboardClient:
         self,
         stock_code: str,
         time_unit: str = "1",
-        days: int = 1,
     ) -> pd.DataFrame:
-        """Fetch intraday minute-bar OHLCV.
+        """Fetch intraday minute-bar OHLCV for the current/last trading day.
 
-        ``time_unit``: minute interval — one of '1', '3', '5', '10', '15', '30', '60'.
-        ``days``: number of trading days of minute data to fetch.
+        ``time_unit``: minute interval — one of '5', '10', '15', '30', '60', '240'.
 
         The KIS endpoint returns bars in descending time order, up to ~30
-        bars per call.  This method pages backwards until the requested
-        trading days are collected and returns a DataFrame sorted ascending
-        by time.
+        bars per call.  This method pages backwards until the full trading
+        day is collected and returns a DataFrame sorted ascending by time.
         """
-        all_rows: list[dict] = []
-        hour_cursor = "160000"          # start from market close (16:00)
-        sessions_seen = 0
-        prev_date = None
-        prev_earliest_key = None        # (date, time) to detect stuck pagination
-        batch_dates: set[str] = set()   # dates seen in current batch
+        rows: list[dict] = []
+        hour_cursor = "160000"
+        prev_cursor: str | None = None
 
-        max_pages = 30 * days           # scale pagination cap to days requested
-        for _ in range(max_pages):
+        for _ in range(50):
             payload = self._get(
                 "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
                 "FHKST03010200",
@@ -254,32 +247,19 @@ class KISDashboardClient:
                     "FID_INPUT_ISCD": stock_code,
                     "FID_ETC_CLS_CODE": time_unit,
                     "FID_INPUT_HOUR_1": hour_cursor,
-                    "FID_PW_DATA_INCU_YN": "Y",
+                    "FID_PW_DATA_INCU_YN": "N",
                 },
             )
             output2 = payload.get("output2", [])
             if not output2:
                 break
 
-            batch_dates.clear()
             for r in output2:
                 hhmm = r.get("stck_cntg_hour", "")
                 bsop_date = r.get("stck_bsop_date", "")
                 if not hhmm:
                     continue
-                batch_dates.add(bsop_date)
-
-                # Track session boundaries — count each unique date
-                # (today = 1, previous day = 2, etc.)
-                if bsop_date and bsop_date != prev_date:
-                    sessions_seen += 1
-                    prev_date = bsop_date
-
-                # Stop collecting once we exceed the requested days
-                if sessions_seen > days:
-                    break
-
-                all_rows.append({
+                rows.append({
                     "Date": bsop_date,
                     "Time": hhmm,
                     "Open": self._int(r.get("stck_oprc")),
@@ -289,37 +269,20 @@ class KISDashboardClient:
                     "Volume": self._int(r.get("cntg_vol")),
                 })
 
-            # Stop paging if we already have enough days
-            if sessions_seen > days:
+            earliest = output2[-1].get("stck_cntg_hour", "")
+            if earliest == prev_cursor or earliest <= "090000":
                 break
+            prev_cursor = earliest
+            hour_cursor = earliest
 
-            # Determine the earliest (date, time) in this batch
-            last_rec = output2[-1]
-            earliest_time = last_rec.get("stck_cntg_hour", "")
-            earliest_date = last_rec.get("stck_bsop_date", "")
-            earliest_key = (earliest_date, earliest_time)
-
-            # If no progress compared to last batch, stop to avoid infinite loop
-            if earliest_key == prev_earliest_key:
-                break
-            prev_earliest_key = earliest_key
-
-            # If this batch contains a day boundary (multiple dates), or we
-            # reached the opening of a session (<=0901), reset the cursor to
-            # market close so the next call pages through the previous day
-            # from the top rather than from the opening time.
-            if len(batch_dates) > 1 or earliest_time <= "090100":
-                hour_cursor = "160000"
-            else:
-                hour_cursor = earliest_time
-
-        df = pd.DataFrame(all_rows)
+        df = pd.DataFrame(rows)
         if df.empty:
             return df
 
-        # Deduplicate (overlapping page boundaries) and sort ascending
         df = df.drop_duplicates(subset=["Date", "Time"], keep="first")
-        df["Datetime"] = pd.to_datetime(df["Date"] + df["Time"], format="%Y%m%d%H%M%S")
+        df["Datetime"] = pd.to_datetime(
+            df["Date"] + df["Time"], format="%Y%m%d%H%M%S",
+        )
         df = df.sort_values("Datetime").reset_index(drop=True)
         return df
 

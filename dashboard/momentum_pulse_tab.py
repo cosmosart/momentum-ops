@@ -104,27 +104,35 @@ def render_momentum_pulse_tab(ticker: str) -> None:
             "Analysis Type",
             options=["Daily", "2 Days", "5 Days", "Custom period"],
             index=0,
-            help="How many trading days of intraday data to analyse.",
+            help="Daily: intraday minute bars. Multi-day: daily OHLCV candles.",
         )
+        is_intraday = analysis_type == "Daily"
 
     with col_tf:
-        timeframe = st.selectbox(
-            "Timeframe",
-            options=["5min", "10min", "15min", "30min", "60min", "240min"],
-            index=0,
-            help="Intraday minute-bar interval.",
-        )
+        if is_intraday:
+            timeframe = st.selectbox(
+                "Timeframe",
+                options=["5min", "10min", "15min", "30min", "60min", "240min"],
+                index=0,
+                help="Intraday minute-bar interval.",
+            )
+        else:
+            st.selectbox("Timeframe", options=["Daily"], disabled=True)
+            timeframe = None
 
     with col_period:
         if analysis_type == "Custom period":
             history_days = st.number_input(
-                "Days", min_value=1, max_value=30, value=3, step=1,
+                "Days", min_value=2, max_value=200, value=10, step=1,
                 help="Number of trading days to fetch",
             )
+        elif is_intraday:
+            history_days = 1
+            st.caption("Current session")
         else:
-            _analysis_day_map = {"Daily": 1, "2 Days": 2, "5 Days": 5}
+            _analysis_day_map = {"2 Days": 2, "5 Days": 5}
             history_days = _analysis_day_map[analysis_type]
-            st.caption(f"{history_days} trading day{'s' if history_days > 1 else ''}")
+            st.caption(f"{history_days} trading days")
 
     with col_ma_type:
         ma_types = st.multiselect(
@@ -157,8 +165,11 @@ def render_momentum_pulse_tab(ticker: str) -> None:
         try:
             quote = client.get_realtime_price(ticker)
             investor = client.get_investor_snapshot(ticker)
-            time_unit = timeframe.replace("min", "")
-            df = client.get_minute_ohlcv(ticker, time_unit=time_unit, days=history_days)
+            if is_intraday:
+                time_unit = timeframe.replace("min", "")
+                df = client.get_minute_ohlcv(ticker, time_unit=time_unit)
+            else:
+                df = client.get_daily_ohlcv(ticker, period_code="D", count=history_days)
         except RuntimeError as exc:
             st.error(f"KIS API call failed: {exc}")
             return
@@ -288,10 +299,10 @@ def render_momentum_pulse_tab(ticker: str) -> None:
     df = df.reset_index(drop=True)
     x_idx = df.index
 
-    if history_days == 1:
+    if is_intraday:
         tick_labels = df["Datetime"].dt.strftime("%H:%M")
     else:
-        tick_labels = df["Datetime"].dt.strftime("%m-%d %H:%M")
+        tick_labels = df["Date"].dt.strftime("%Y-%m-%d")
     n_ticks = min(len(df), 40)
     tick_step = max(1, len(df) // n_ticks)
     tick_vals = list(range(0, len(df), tick_step))
