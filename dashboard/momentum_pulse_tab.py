@@ -273,6 +273,7 @@ def render_momentum_pulse_tab(ticker: str) -> None:
 
     with c1:
         st.metric("Current Price", _kr_format(quote.get("current_price"), " KRW"))
+        st.write(df["Datetime"].max().strftime("As of %Y-%m-%d %H:%M KST"))
 
     with c2:
         chg = quote.get("price_change")
