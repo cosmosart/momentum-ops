@@ -2,13 +2,15 @@
 Momentum Pulse tab — real-time KIS-powered monitoring and analysis.
 
 Provides all the charting functionality of the Momentum Core tab
-sourced from the Korea Investment & Securities (KIS) REST API
-and local high-frequency database, fixed for 15:30 KST close.
+(RSI, MACD, Bollinger Bands, moving averages, support/resistance, VWAP)
+but sourced from the Korea Investment & Securities (KIS) REST API
+and local high-frequency database.
 """
 
 from __future__ import annotations
 
 import logging
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -16,20 +18,25 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from dashboard.kis_client import KISDashboardClient, create_client
+from dashboard.utils import format_price, get_currency_info
 from models.models import calculate_indicators
 
 logger = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _kr_format(value: int | float | None, suffix: str = "") -> str:
+    """Format a Korean-market numeric value."""
     if value is None or pd.isna(value):
         return "N/A"
     return f"{value:,.0f}{suffix}"
 
+
 def _investor_bar_chart(snapshot: dict) -> go.Figure:
+    """Horizontal bar chart of investor-type net buying."""
     categories = ["Personal", "Foreign", "Institution"]
     values = [
         snapshot.get("personal_net_buy") or 0,
@@ -37,32 +44,48 @@ def _investor_bar_chart(snapshot: dict) -> go.Figure:
         snapshot.get("institution_net_buy") or 0,
     ]
     colors = ["#4ECDC4" if v >= 0 else "#ef5350" for v in values]
+
     fig = go.Figure(go.Bar(
-        x=values, y=categories, orientation="h",
-        marker_color=colors, text=[f"{v:+,.0f}" for v in values],
+        x=values,
+        y=categories,
+        orientation="h",
+        marker_color=colors,
+        text=[f"{v:+,.0f}" for v in values],
         textposition="auto",
     ))
     fig.update_layout(
-        title="Net Buy Qty by Investor Type", height=250,
-        margin=dict(l=0, r=0, t=40, b=0), template="plotly_white",
+        title="Net Buy Qty by Investor Type",
+        height=250,
+        margin=dict(l=0, r=0, t=40, b=0),
+        template="plotly_white",
+        xaxis_title="Shares",
     )
     return fig
+
 
 # ---------------------------------------------------------------------------
 # Main renderer
 # ---------------------------------------------------------------------------
 
 def render_momentum_pulse_tab(ticker: str) -> None:
+    """Render the Momentum Pulse tab for the given KR *ticker* (raw code)."""
+
     st.markdown(
-        "<style>.block-container { max-width: 98%; padding-left: 1rem; padding-right: 1rem; }</style>",
+        "<style>.block-container { max-width: 98%; padding-left: 1rem; "
+        "padding-right: 1rem; }</style>",
         unsafe_allow_html=True,
     )
 
     region = st.session_state.get("ticker_region", "US")
     if region != "KR":
-        st.warning(f"Momentum Pulse requires a KR ticker. Current: {region}")
+        st.warning(
+            f"**{ticker}** is a **{region}** ticker.  "
+            "Momentum Pulse uses the KIS API which only supports Korean (KR) equities.  \n"
+            "Please select a KR ticker from the sidebar."
+        )
         return
 
+    # ── Initialise KIS client ─────────────────────────────────────────────
     try:
         client = _get_client()
     except RuntimeError as exc:
@@ -72,149 +95,638 @@ def render_momentum_pulse_tab(ticker: str) -> None:
     st.header(f"Momentum Pulse — {ticker}")
 
     # ── Controls ──────────────────────────────────────────────────────────
-    col_at, col_tf, col_period, col_ma_type, col_ma_select, col_bb, col_vwap, col_sr_toggle = st.columns(
-        [1.2, 1.2, 1.2, 1, 2.5, 0.8, 0.7, 1.2]
+    col_at, col_tf, col_period, col_ma_type, col_ma_select, col_bb, col_vwap, col_sr_toggle, col_sr_levels = st.columns(
+        [1.2, 1.2, 1.5, 1, 3, 1, 0.8, 1.5, 0.5]
     )
 
     with col_at:
-        analysis_type = st.selectbox("Analysis Type", ["Daily", "2 Days", "5 Days", "7 Days", "Custom period"])
-    with col_tf:
-        timeframe = st.selectbox("Timeframe", ["1min", "3min", "5min", "10min", "15min", "30min", "60min"])
-    with col_period:
-        _analysis_day_map = {"Daily": 1, "2 Days": 2, "5 Days": 5, "7 Days": 7}
-        history_days = st.number_input("Days", 1, 30, 3) if analysis_type == "Custom period" else _analysis_day_map.get(analysis_type, 1)
-    with col_ma_type:
-        ma_types = st.multiselect("MA", ["SMA", "EMA"], ["EMA"])
-    with col_ma_select:
-        ma_periods = st.multiselect("Periods", ["5", "10", "20", "25", "50", "100", "200"], ["5", "25"])
-    with col_bb:
-        show_bollinger = st.checkbox("BB", False)
-    with col_vwap:
-        show_vwap = st.checkbox("VWAP", False)
-    with col_sr_toggle:
-        show_sr = st.checkbox("S/R", False)
+        analysis_type = st.selectbox(
+            "Analysis Type",
+            options=["Daily", "2 Days", "5 Days", "Custom period"],
+            index=0,
+            help="Number of trading days of intraday minute data.",
+        )
 
-    # ── Data Acquisition Logic ───────────────────────────────────────────
+    with col_tf:
+        timeframe = st.selectbox(
+            "Timeframe",
+            options=["1min", "5min", "10min", "15min", "30min", "60min", "240min"],
+            index=0,
+            help="Intraday minute-bar interval.",
+        )
+
+    with col_period:
+        if analysis_type == "Custom period":
+            history_days = st.number_input(
+                "Days", min_value=1, max_value=30, value=3, step=1,
+                help="Number of trading days to fetch",
+            )
+        else:
+            _analysis_day_map = {"Daily": 1, "2 Days": 2, "5 Days": 5}
+            history_days = _analysis_day_map[analysis_type]
+            st.caption(f"{history_days} trading day{'s' if history_days > 1 else ''}")
+
+    with col_ma_type:
+        ma_types = st.multiselect(
+            "MA Type", options=["SMA", "EMA"], default=["EMA"],
+            help="Simple or Exponential Moving Average",
+        )
+
+    with col_ma_select:
+        ma_periods = st.multiselect(
+            "Moving Averages",
+            options=["5", "10", "20", "25", "50", "100", "200"],
+            default=["5", "25"],
+            help="MA periods to overlay on the price chart",
+        )
+
+    with col_bb:
+        show_bollinger = st.checkbox("Bollinger Bands", value=False)
+
+    with col_vwap:
+        show_vwap = st.checkbox("VWAP", value=False)
+
+    with col_sr_toggle:
+        show_sr = st.checkbox("Support & Resistance", value=False)
+
+    with col_sr_levels:
+        sr_levels = st.selectbox("Levels", options=[1, 2, 3, 4, 5], index=0) if show_sr else 1
+
+    # ── Fetch Data ────────────────────────────────────────────────────────
+    yf_symbol = st.session_state.get("yf_symbol", ticker)
+
+    with st.spinner("Fetching snapshot from KIS …"):
+        try:
+            quote = client.get_realtime_price(ticker)
+            investor = client.get_investor_snapshot(ticker)
+        except RuntimeError as exc:
+            st.error(f"KIS API call failed: {exc}")
+            return
+
     time_unit = timeframe.replace("min", "")
     interval_val = int(time_unit)
 
-    # 1. Fetch Snapshot
-    with st.spinner("Fetching KIS Snapshot..."):
-        quote = client.get_realtime_price(ticker)
-        investor = client.get_investor_snapshot(ticker)
+    if history_days == 1:
+        # ── Daily View: Fetch live intraday bars directly from KIS ──
+        with st.spinner("Fetching today's live intraday bars from KIS …"):
+            try:
+                df = client.get_minute_ohlcv(ticker, time_unit=time_unit)
+                if not df.empty and df["Datetime"].dt.tz is not None:
+                    df["Datetime"] = df["Datetime"].dt.tz_localize(None)
+            except RuntimeError as exc:
+                st.error(f"KIS minute OHLCV failed: {exc}")
+                return
+    else:
+        # ── Swing View: Fetch data strictly from local PostgreSQL ──
+        with st.spinner("Fetching multi-day minute data from local DB …"):
+            from database.db import Database
+            import pandas.io.sql as psql
+            
+            db = Database()
+            if not db.connect():
+                st.error("Failed to connect to local database for historical minute data.")
+                df = pd.DataFrame()
+            else:
+                try:
+                    lookback_days = int(history_days * 1.5) + 2
+                    
+                    query = """
+                            SELECT 
+                                    timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Seoul' as "Datetime", 
+                                    open_price as "Open", 
+                                    high_price as "High", 
+                                    low_price as "Low", 
+                                    close_price as "Close", 
+                                    volume as "Volume"
+                                FROM kr_minute_ohlcv
+                                WHERE ticker = %(ticker)s
+                                AND interval_min = 1
+                                -- Ensure we are looking at the 'now' in Seoul, not UTC
+                                AND timestamp >= (NOW() AT TIME ZONE 'Asia/Seoul' - CAST(%(lookback)s AS INTERVAL))
+                                ORDER BY timestamp ASC
+                            """
+                    params = {
+                        "ticker": ticker, 
+                        "lookback": f"{lookback_days} days"
+                    }
+                    
+                    df = psql.read_sql(query, db.conn, params=params)
+                    
+                except Exception as exc:
+                    st.error(f"Local database fetch failed: {exc}")
+                    df = pd.DataFrame()
+                finally:
+                    db.close()
 
-    # 2. Fetch Today's Real-time Data (Fixes the 13:35 DB gap)
-    with st.spinner("Syncing Live KIS Bars..."):
-        try:
-            df_today = client.get_minute_ohlcv(ticker, time_unit="1") # Always get 1m for resampling
-            if not df_today.empty:
-                # Localize to Seoul and strip TZ for clean merge
-                df_today["Datetime"] = df_today["Datetime"].dt.tz_localize(None)
-        except Exception:
-            df_today = pd.DataFrame()
+            if not df.empty:
+                # 1. Convert DB UTC to KST
+                df["Datetime"] = pd.to_datetime(df["Datetime"]).dt.tz_convert('Asia/Seoul').dt.tz_localize(None)
+                
+                # 2. Dynamically resample 1-min baseline to target timeframe
+                if interval_val > 1:
+                    df = df.set_index("Datetime").resample(f"{interval_val}min").agg({
+                        "Open": "first",
+                        "High": "max",
+                        "Low": "min",
+                        "Close": "last",
+                        "Volume": "sum"
+                    }).dropna().reset_index()
+                
+                # 3. Trim exactly to requested trading days
+                unique_dates = sorted(df["Datetime"].dt.date.unique())
+                if len(unique_dates) > history_days:
+                    keep_dates = unique_dates[-history_days:]
+                    df = df[df["Datetime"].dt.date.isin(keep_dates)]
 
-    # 3. Fetch Historical Data from Local DB (Fixes the 7-day seed)
-    df_hist = pd.DataFrame()
-    if history_days >= 1:
-        from database.db import Database
-        import pandas.io.sql as psql
-        db = Database()
-        if db.connect():
-            query = """
-                SELECT timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Seoul' as "Datetime", 
-                       open_price as "Open", high_price as "High", low_price as "Low", 
-                       close_price as "Close", volume as "Volume"
-                FROM kr_minute_ohlcv
-                WHERE ticker = %(ticker)s AND interval_min = 1
-                  AND timestamp >= (NOW() AT TIME ZONE 'Asia/Seoul' - CAST(%(lookback)s AS INTERVAL))
-                ORDER BY timestamp ASC
-            """
-            df_hist = psql.read_sql(query, db.conn, params={"ticker": ticker, "lookback": f"{history_days + 2} days"})
-            db.close()
-            if not df_hist.empty:
-                df_hist["Datetime"] = pd.to_datetime(df_hist["Datetime"]).dt.tz_localize(None)
-
-    # 4. Merge and Resample
-    df_raw = pd.concat([df_hist, df_today], ignore_index=True)
-    if df_raw.empty:
-        st.error("No data available.")
+    if df.empty:
+        st.warning("No OHLCV data returned for this ticker / period.")
         return
 
-    # Drop duplicates (KIS live data overwrites DB rows)
-    df_raw = df_raw.sort_values("Datetime").drop_duplicates(subset=["Datetime"], keep="last")
-
-    # Dynamic Resampling to User timeframe
-    df = df_raw.set_index("Datetime").resample(f"{interval_val}min").agg({
-        "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
-    }).dropna().reset_index()
-
-    # Trim to history_days
-    unique_dates = sorted(df["Datetime"].dt.date.unique())
-    if len(unique_dates) > history_days:
-        df = df[df["Datetime"].dt.date.isin(unique_dates[-history_days:])]
-
-    # ── Indicators ──────────────────────────────────────────────────────
-    for mt in ma_types:
+    # ── Compute MAs ───────────────────────────────────────────────────────
+    for ma_type in ma_types:
         for p in ma_periods:
-            if mt == "EMA": df[f"{mt}{p}"] = df["Close"].ewm(span=int(p), adjust=False).mean()
-            else: df[f"{mt}{p}"] = df["Close"].rolling(window=int(p)).mean()
+            plen = int(p)
+            col_name = f"{ma_type}{p}"
+            if ma_type == "EMA":
+                df[col_name] = df["Close"].ewm(span=plen, adjust=False).mean()
+            else:
+                df[col_name] = df["Close"].rolling(window=plen).mean()
 
+    # ── Indicators (RSI / MACD) ───────────────────────────────────────────
     indicators = calculate_indicators(df)
     df = pd.concat([df, indicators], axis=1)
-    
-    # VWAP & OBV
-    df["VWAP"] = (df["Close"] * df["Volume"]).cumsum() / df["Volume"].cumsum()
-    obv_change = np.where(df["Close"] > df["Close"].shift(1), df["Volume"], 
-                          np.where(df["Close"] < df["Close"].shift(1), -df["Volume"], 0))
-    df["OBV"] = obv_change.cumsum()
-    df["OBV_signal"] = df["OBV"].ewm(span=20, adjust=False).mean()
 
-    # ── Rendering ───────────────────────────────────────────────────────
-    # (Metrics Row)
-    m1, m2, m3, m4 = st.columns(4)
-    with m1: st.metric("Price", _kr_format(quote.get("current_price"), " KRW"))
-    with m2: st.metric("RSI (14)", f"{df.iloc[-1]['RSI']:.1f}" if "RSI" in df.columns else "N/A")
-    with m3: st.metric("MACD", f"{df.iloc[-1]['MACD']:.2f}" if "MACD" in df.columns else "N/A")
-    with m4: st.metric("VWAP", _kr_format(df.iloc[-1]['VWAP']))
+    # ── Compute OBV and VWAP directly in DataFrame ────────────────────────
+    if not df.empty:
+        cum_vol = df["Volume"].cumsum()
+        cum_vwap = (df["Close"] * df["Volume"]).cumsum()
+        df["VWAP"] = cum_vwap / cum_vol
 
-    # (Chart Building)
+        obv_change = pd.Series(0, index=df.index, dtype=float)
+        obv_change[df["Close"] > df["Close"].shift(1)] = df["Volume"]
+        obv_change[df["Close"] < df["Close"].shift(1)] = -df["Volume"]
+        df["OBV"] = obv_change.cumsum()
+        df["OBV_signal"] = df["OBV"].ewm(span=20, adjust=False).mean()
+
+    # ── Metrics Row 1: Price Action ───────────────────────────────────────
+    c1, c2, c3 = st.columns([1, 1, 1])
+
+    with c1:
+        st.metric("Current Price", _kr_format(quote.get("current_price"), " KRW"))
+
+    with c2:
+        chg = quote.get("price_change")
+        rate = quote.get("price_change_rate")
+        if chg is not None and rate is not None:
+            arrow = "▲" if chg >= 0 else "▼"
+            color = "#09ab3b" if chg >= 0 else "#ff2b2b"
+            st.markdown(
+                f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">Day Change</div>'
+                f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
+                f'<span style="font-size:1.75rem;font-weight:700">{rate:+.2f}%</span>'
+                f'<span style="font-size:1rem;color:{color}">{arrow} {_kr_format(chg)} KRW</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.metric("Day Change", "N/A")
+
+    with c3:
+        if len(df) >= 3:
+            closes = df["Close"].values.astype(float)
+            x = np.arange(len(closes))
+            slope, intercept = np.polyfit(x, closes, 1)
+            fitted_start = intercept
+            slope_pct = (slope / abs(fitted_start)) * 100 if fitted_start != 0 else 0.0
+            trend_text = "📈 Uptrend" if slope_pct >= 0 else "📉 Downtrend"
+            trend_color = "#09ab3b" if slope_pct >= 0 else "#ff2b2b"
+            st.markdown(
+                f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">Price Trend</div>'
+                f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
+                f'<span style="font-size:1.85rem;font-weight:700;color:{trend_color}">{trend_text}</span>'
+                f'<span style="font-size:1.75rem">{slope_pct:+.2f}%</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.metric("Price Trend", "N/A")
+
+    st.write("") # Spacer
+
+    # ── Metrics Row 2: Momentum Indicators ────────────────────────────────
+    i1, i2, i3, i4 = st.columns(4)
+
+    with i1:
+        if "RSI" in df.columns and not pd.isna(df.iloc[-1]["RSI"]):
+            rsi_val = df.iloc[-1]["RSI"]
+            if rsi_val > 70:
+                sig, sig_c = "🔴 Overbought", "#ff2b2b"
+            elif rsi_val < 30:
+                sig, sig_c = "🟢 Oversold", "#09ab3b"
+            else:
+                sig, sig_c = "🟡 Neutral", "#faca2b"
+            st.markdown(
+                f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">RSI (14)</div>'
+                f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
+                f'<span style="font-size:1.5rem;font-weight:700;color:{sig_c}">{sig}</span>'
+                f'<span style="font-size:1.4rem">{rsi_val:.1f}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.metric("RSI (14)", "N/A")
+
+    with i2:
+        if "MACD" in df.columns and not pd.isna(df.iloc[-1]["MACD"]):
+            macd_val = df.iloc[-1]["MACD"]
+            sig_val = df.iloc[-1].get("MACD_signal")
+            if sig_val is not None and not pd.isna(sig_val):
+                if macd_val > sig_val:
+                    sig, sig_c = "🟢 Bullish", "#09ab3b"
+                else:
+                    sig, sig_c = "🔴 Bearish", "#ff2b2b"
+            else:
+                sig, sig_c = "", "grey"
+            st.markdown(
+                f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">MACD</div>'
+                f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
+                f'<span style="font-size:1.5rem;font-weight:700;color:{sig_c}">{sig}</span>'
+                f'<span style="font-size:1.4rem;">{macd_val:.1f}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.metric("MACD", "N/A")
+
+    with i3:
+        if "VWAP" in df.columns and not pd.isna(df.iloc[-1]["VWAP"]):
+            vwap_val = df.iloc[-1]["VWAP"]
+            close_val = df.iloc[-1]["Close"]
+            
+            if close_val > (vwap_val * 1.002):
+                sig, sig_c = "🟢 Above VWAP", "#09ab3b"
+            elif close_val < (vwap_val * 0.998):
+                sig, sig_c = "🔴 Below VWAP", "#ff2b2b"
+            else:
+                sig, sig_c = "🟡 At VWAP", "#faca2b"
+                
+            st.markdown(
+                f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">VWAP Alignment</div>'
+                f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
+                f'<span style="font-size:1.5rem;font-weight:700;color:{sig_c}">{sig}</span>'
+                f'<span style="font-size:1.4rem;">{vwap_val:,.0f}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.metric("VWAP Alignment", "N/A")
+
+    with i4:
+        if "OBV" in df.columns and not pd.isna(df.iloc[-1]["OBV"]):
+            obv_val = df.iloc[-1]["OBV"]
+            obv_sig = df.iloc[-1]["OBV_signal"]
+            
+            if obv_val > obv_sig:
+                sig, sig_c = "🟢 Accumulation", "#09ab3b"
+            else:
+                sig, sig_c = "🔴 Distribution", "#ff2b2b"
+                
+            def _format_obv(val):
+                if abs(val) >= 1_000_000: return f"{val/1_000_000:.1f}M"
+                if abs(val) >= 1_000: return f"{val/1_000:.1f}K"
+                return f"{val:.0f}"
+                
+            st.markdown(
+                f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">OBV Trend</div>'
+                f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
+                f'<span style="font-size:1.5rem;font-weight:700;color:{sig_c}">{sig}</span>'
+                f'<span style="font-size:1.4rem;">{_format_obv(obv_val)}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.metric("OBV Trend", "N/A")
+
+    st.divider()
+
+    # ── Investor snapshot (collapsible) ───────────────────────────────────
+    with st.expander("📊 Investor Trading Snapshot", expanded=False):
+        icol1, icol2 = st.columns([1, 2])
+        with icol1:
+            st.markdown(f"**Data date:** {investor.get('data_date', 'N/A')}")
+            inv_rows = {
+                "Personal": investor.get("personal_net_buy"),
+                "Foreign": investor.get("foreigner_net_buy"),
+                "Institution": investor.get("institution_net_buy"),
+            }
+            for label, val in inv_rows.items():
+                st.metric(f"{label} Net Buy", _kr_format(val))
+        with icol2:
+            st.plotly_chart(_investor_bar_chart(investor), use_container_width=True)
+
+    # ── Build OHLCV chart ────────────────────────────────────────────────
     df = df.reset_index(drop=True)
-    tick_labels = df["Datetime"].dt.strftime("%H:%M" if history_days == 1 else "%m/%d %H:%M")
-    
-    fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.03,
-                        row_heights=[0.5, 0.1, 0.15, 0.25], specs=[[{"secondary_y": False}], [{"secondary_y": True}], [{"secondary_y": False}], [{"secondary_y": False}]])
+    x_idx = df.index
 
-    # Price & Candlestick
-    fig.add_trace(go.Candlestick(x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name="Price"), row=1, col=1)
-    
-    # MAs
-    for mt in ma_types:
+    if history_days == 1:
+        tick_labels = df["Datetime"].dt.strftime("%H:%M")
+    else:
+        tick_labels = df["Datetime"].dt.strftime("%m-%d %H:%M")
+    n_ticks = min(len(df), 40)
+    tick_step = max(1, len(df) // n_ticks)
+    tick_vals = list(range(0, len(df), tick_step))
+    tick_text = [tick_labels.iloc[i] for i in tick_vals]
+
+    fig = make_subplots(
+        rows=4, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.05,
+        subplot_titles=("Price", "Volume", "RSI", "MACD"),
+        row_heights=[1.0, 0.2, 0.2, 0.375],
+        specs=[
+            [{"secondary_y": False}],
+            [{"secondary_y": True}],
+            [{"secondary_y": False}],
+            [{"secondary_y": False}],
+        ],
+    )
+
+    # -- Candlestick -------------------------------------------------------
+    fig.add_trace(
+        go.Candlestick(
+            x=x_idx,
+            open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"],
+            name="Price",
+            customdata=tick_labels.values,
+            hoverinfo="text",
+            text=[
+                f"{tick_labels.iloc[i]}<br>"
+                f"O: {df['Open'].iloc[i]:,.0f}  H: {df['High'].iloc[i]:,.0f}<br>"
+                f"L: {df['Low'].iloc[i]:,.0f}  C: {df['Close'].iloc[i]:,.0f}<br>"
+                f"Vol: {int(df['Volume'].iloc[i]):,}"
+                for i in range(len(df))
+            ],
+        ),
+        row=1, col=1,
+    )
+
+    # -- Moving averages ---------------------------------------------------
+    period_colors = {
+        "5": "#FF6B6B", "10": "#FFA500", "20": "#4ECDC4", "25": "#FFD700",
+        "50": "#95E1D3", "100": "#9B59B6", "200": "#3498DB",
+    }
+    line_styles = {"SMA": "solid", "EMA": "dash"}
+
+    for ma_type in ma_types:
         for p in ma_periods:
-            fig.add_trace(go.Scatter(x=df.index, y=df[f"{mt}{p}"], name=f"{mt}{p}", line=dict(width=1.2)), row=1, col=1)
+            col_name = f"{ma_type}{p}"
+            if col_name in df.columns:
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_idx, y=df[col_name], name=col_name,
+                        customdata=tick_labels.values,
+                        hovertemplate="%{customdata}<br>%{y:,.0f}<extra>%{fullData.name}</extra>",
+                        line=dict(
+                            color=period_colors.get(p, "#808080"),
+                            width=1.5,
+                            dash=line_styles.get(ma_type, "solid"),
+                        ),
+                        opacity=0.8,
+                    ),
+                    row=1, col=1,
+                )
 
-    # Volume & OBV
-    fig.add_trace(go.Bar(x=df.index, y=df["Volume"], name="Volume", marker_color="gray", opacity=0.5), row=2, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["OBV"], name="OBV", line=dict(color="purple")), row=2, col=1, secondary_y=True)
+    # -- Bollinger Bands ---------------------------------------------------
+    if show_bollinger:
+        bb_mid = df["Close"].rolling(window=20).mean()
+        bb_std = df["Close"].rolling(window=20).std()
+        bb_upper = bb_mid + 2 * bb_std
+        bb_lower = bb_mid - 2 * bb_std
 
-    # RSI
-    fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI", line=dict(color="blue")), row=3, col=1)
-    fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
-    fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
+        fig.add_trace(go.Scatter(
+            x=x_idx, y=bb_upper, name="BB Upper",
+            line=dict(color="rgba(173,216,230,0.6)", width=1),
+            customdata=tick_labels.values,
+            hovertemplate="%{customdata}<br>BB Upper: %{y:,.0f}<extra></extra>",
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=x_idx, y=bb_lower, name="BB Lower",
+            line=dict(color="rgba(173,216,230,0.6)", width=1),
+            fill="tonexty", fillcolor="rgba(173,216,230,0.12)",
+            customdata=tick_labels.values,
+            hovertemplate="%{customdata}<br>BB Lower: %{y:,.0f}<extra></extra>",
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=x_idx, y=bb_mid, name="BB Mid",
+            line=dict(color="rgba(173,216,230,0.8)", width=1, dash="dot"),
+            customdata=tick_labels.values,
+            hovertemplate="%{customdata}<br>BB Mid: %{y:,.0f}<extra></extra>",
+        ), row=1, col=1)
 
-    # MACD
-    fig.add_trace(go.Scatter(x=df.index, y=df["MACD"], name="MACD"), row=4, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["MACD_signal"], name="Signal"), row=4, col=1)
-    fig.add_trace(go.Bar(x=df.index, y=df["MACD_hist"], name="Hist"), row=4, col=1)
+    # -- Support & Resistance ----------------------------------------------
+    if show_sr:
+        support_levels, resistance_levels = _find_sr_levels(df, num_levels=sr_levels)
+        for i, s in enumerate(support_levels, 1):
+            fig.add_hline(
+                y=s, line_dash="dot", line_color="green", line_width=2,
+                opacity=max(0.7 - (i - 1) * 0.1, 0.3),
+                annotation_text=f"S{i}: {s:,.0f} KRW",
+                annotation_position="right", row=1, col=1,
+            )
+        for i, r in enumerate(resistance_levels, 1):
+            fig.add_hline(
+                y=r, line_dash="dot", line_color="red", line_width=2,
+                opacity=max(0.7 - (i - 1) * 0.1, 0.3),
+                annotation_text=f"R{i}: {r:,.0f} KRW",
+                annotation_position="right", row=1, col=1,
+            )
 
-    fig.update_layout(height=900, template="plotly_white", xaxis_rangeslider_visible=False)
-    fig.update_xaxes(tickvals=list(range(0, len(df), max(1, len(df)//20))), ticktext=tick_labels[::max(1, len(df)//20)])
+    # -- Volume ------------------------------------------------------------
+    vol_colors = [
+        "#26a69a" if df["Close"].iloc[i] >= df["Open"].iloc[i] else "#ef5350"
+        for i in range(len(df))
+    ]
+    fig.add_trace(
+        go.Bar(
+            x=x_idx, y=df["Volume"], name="Volume",
+            marker_color=vol_colors, opacity=0.7, showlegend=False,
+            customdata=tick_labels.values,
+            hovertemplate="%{customdata}<br>Vol: %{y:,.0f}<extra></extra>",
+        ),
+        row=2, col=1,
+    )
+
+    vol_ma = df["Volume"].rolling(window=20).mean()
+    fig.add_trace(
+        go.Scatter(
+            x=x_idx, y=vol_ma, name="Vol MA(20)",
+            line=dict(color="#FFA500", width=1.5),
+            customdata=tick_labels.values,
+            hovertemplate="%{customdata}<br>Vol MA: %{y:,.0f}<extra></extra>",
+        ),
+        row=2, col=1,
+    )
+
+    # -- OBV on secondary y ------------------------------------------------
+    if "OBV" in df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=x_idx, y=df["OBV"], name="OBV",
+                line=dict(color="#9B59B6", width=1.2),
+                customdata=tick_labels.values,
+                hovertemplate="%{customdata}<br>OBV: %{y:,.0f}<extra></extra>",
+            ),
+            row=2, col=1, secondary_y=True,
+        )
+        fig.update_yaxes(title_text="OBV", showgrid=False, row=2, col=1, secondary_y=True)
+
+    # -- VWAP on price chart -----------------------------------------------
+    if show_vwap and "VWAP" in df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=x_idx, y=df["VWAP"], name="VWAP",
+                line=dict(color="#FF00FF", width=1.5, dash="dashdot"),
+                customdata=tick_labels.values,
+                hovertemplate="%{customdata}<br>VWAP: %{y:,.0f}<extra></extra>",
+            ),
+            row=1, col=1,
+        )
+
+    # -- RSI ---------------------------------------------------------------
+    if "RSI" in df.columns:
+        rsi_vals = df["RSI"]
+        fig.add_trace(go.Scatter(
+            x=x_idx, y=[70] * len(df), mode="lines",
+            line=dict(width=0), showlegend=False, hoverinfo="skip",
+        ), row=3, col=1)
+        fig.add_trace(go.Scatter(
+            x=x_idx, y=rsi_vals.where(rsi_vals >= 70), mode="lines",
+            line=dict(width=0), showlegend=False, hoverinfo="skip",
+            fill="tonexty", fillcolor="rgba(239,83,80,0.25)",
+        ), row=3, col=1)
+        fig.add_trace(go.Scatter(
+            x=x_idx, y=[30] * len(df), mode="lines",
+            line=dict(width=0), showlegend=False, hoverinfo="skip",
+        ), row=3, col=1)
+        fig.add_trace(go.Scatter(
+            x=x_idx, y=rsi_vals.where(rsi_vals <= 30), mode="lines",
+            line=dict(width=0), showlegend=False, hoverinfo="skip",
+            fill="tonexty", fillcolor="rgba(38,166,154,0.25)",
+        ), row=3, col=1)
+        fig.add_trace(go.Scatter(
+            x=x_idx, y=rsi_vals, name="RSI", line=dict(color="purple"),
+            customdata=tick_labels.values,
+            hovertemplate="%{customdata}<br>RSI: %{y:.2f}<extra></extra>",
+        ), row=3, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="red", opacity=0.5, row=3, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", opacity=0.5, row=3, col=1)
+
+    # -- MACD --------------------------------------------------------------
+    if "MACD" in df.columns:
+        fig.add_trace(go.Scatter(
+            x=x_idx, y=df["MACD"], name="MACD", line=dict(color="blue"),
+            customdata=tick_labels.values,
+            hovertemplate="%{customdata}<br>MACD: %{y:.4f}<extra></extra>",
+        ), row=4, col=1)
+        fig.add_trace(go.Scatter(
+            x=x_idx, y=df["MACD_signal"], name="Signal", line=dict(color="orange"),
+            customdata=tick_labels.values,
+            hovertemplate="%{customdata}<br>Signal: %{y:.4f}<extra></extra>",
+        ), row=4, col=1)
+
+        hist_vals = df["MACD_hist"].values
+        hist_colors = []
+        for i, v in enumerate(hist_vals):
+            prev = hist_vals[i - 1] if i > 0 else 0
+            diverging = abs(v) >= abs(prev)
+            if v >= 0:
+                hist_colors.append("#26a69a" if diverging else "#b2dfdb")
+            else:
+                hist_colors.append("#ef5350" if diverging else "#ef9a9a")
+        fig.add_trace(go.Bar(
+            x=x_idx, y=df["MACD_hist"], name="Histogram",
+            marker_color=hist_colors,
+            customdata=tick_labels.values,
+            hovertemplate="%{customdata}<br>Hist: %{y:.4f}<extra></extra>",
+        ), row=4, col=1)
+
+    # -- Layout ------------------------------------------------------------
+    fig.update_layout(
+        height=1100, showlegend=True,
+        xaxis_rangeslider_visible=False, hovermode="closest",
+        spikedistance=-1,
+    )
+    for ax in ("xaxis", "xaxis2", "xaxis3", "xaxis4"):
+        fig.update_layout(**{ax: dict(
+            showspikes=True, spikemode="across", spikethickness=0.5,
+            spikecolor="grey", spikedash="dot",
+        )})
+
+    fig.update_xaxes(tickvals=tick_vals, ticktext=tick_text, tickangle=-45, row=1, col=1)
+    fig.update_xaxes(showticklabels=False, row=2, col=1)
+    fig.update_xaxes(showticklabels=False, row=3, col=1)
+    fig.update_xaxes(showticklabels=False, row=4, col=1)
+
+    fig.update_yaxes(title_text="Price (KRW)", row=1, col=1)
+    fig.update_yaxes(title_text="Volume", row=2, col=1)
+    fig.update_yaxes(title_text="RSI", row=3, col=1)
+    fig.update_yaxes(title_text="MACD", row=4, col=1)
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # Expander Details
-    with st.expander("Investor & Quote Details"):
-        st.plotly_chart(_investor_bar_chart(investor))
-        st.write(quote)
+    # ── Quote detail table ────────────────────────────────────────────────
+    with st.expander("📋 Quote Details", expanded=False):
+        detail_cols = st.columns(4)
+        details = [
+            ("Open", _kr_format(quote.get("open_price"))),
+            ("High", _kr_format(quote.get("high_price"))),
+            ("Low", _kr_format(quote.get("low_price"))),
+            ("Prev Close", _kr_format(quote.get("prev_close"))),
+            ("Volume", _kr_format(quote.get("total_volume"))),
+            ("Trade Amount", _kr_format(quote.get("total_trade_amount"))),
+            ("52w High", _kr_format(quote.get("high_52w"))),
+            ("52w Low", _kr_format(quote.get("low_52w"))),
+            ("Market Cap", _kr_format(quote.get("market_cap"))),
+            ("PER", f"{quote['per']:.2f}" if quote.get("per") else "N/A"),
+            ("PBR", f"{quote['pbr']:.2f}" if quote.get("pbr") else "N/A"),
+            ("Checked At", quote.get("checked_at", "")),
+        ]
+        for idx, (label, val) in enumerate(details):
+            with detail_cols[idx % 4]:
+                st.metric(label, val)
+
+
+# ---------------------------------------------------------------------------
+# Support / Resistance helper (same logic as momentum_tab)
+# ---------------------------------------------------------------------------
+
+def _find_sr_levels(
+    df: pd.DataFrame, num_levels: int = 3, window: int = 5,
+) -> tuple[list[float], list[float]]:
+    lows = df["Low"].values.astype(float)
+    highs = df["High"].values.astype(float)
+
+    support_candidates: list[float] = []
+    for i in range(window, len(lows) - window):
+        if all(lows[i] <= lows[i - window:i]) and all(lows[i] <= lows[i + 1:i + window + 1]):
+            support_candidates.append(lows[i])
+    support_candidates.append(float(df["Low"].min()))
+
+    resistance_candidates: list[float] = []
+    for i in range(window, len(highs) - window):
+        if all(highs[i] >= highs[i - window:i]) and all(highs[i] >= highs[i + 1:i + window + 1]):
+            resistance_candidates.append(highs[i])
+    resistance_candidates.append(float(df["High"].max()))
+
+    return (
+        sorted(set(support_candidates))[:num_levels],
+        sorted(set(resistance_candidates), reverse=True)[:num_levels],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cached client
+# ---------------------------------------------------------------------------
 
 @st.cache_resource(show_spinner=False)
 def _get_client() -> KISDashboardClient:
