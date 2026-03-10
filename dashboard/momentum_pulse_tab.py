@@ -4,7 +4,7 @@ Momentum Pulse tab — real-time KIS-powered monitoring and analysis.
 Provides all the charting functionality of the Momentum Core tab
 (RSI, MACD, Bollinger Bands, moving averages, support/resistance, VWAP)
 but sourced from the Korea Investment & Securities (KIS) REST API
-instead of yfinance.
+and local high-frequency database.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 def _kr_format(value: int | float | None, suffix: str = "") -> str:
     """Format a Korean-market numeric value."""
-    if value is None:
+    if value is None or pd.isna(value):
         return "N/A"
     return f"{value:,.0f}{suffix}"
 
@@ -152,10 +152,10 @@ def render_momentum_pulse_tab(ticker: str) -> None:
     with col_sr_levels:
         sr_levels = st.selectbox("Levels", options=[1, 2, 3, 4, 5], index=0) if show_sr else 1
 
-    # ── Fetch data ────────────────────────────────────────────────────────
+    # ── Fetch Data ────────────────────────────────────────────────────────
     yf_symbol = st.session_state.get("yf_symbol", ticker)
 
-    with st.spinner("Fetching data from KIS …"):
+    with st.spinner("Fetching snapshot from KIS …"):
         try:
             quote = client.get_realtime_price(ticker)
             investor = client.get_investor_snapshot(ticker)
@@ -177,8 +177,7 @@ def render_momentum_pulse_tab(ticker: str) -> None:
                 st.error(f"KIS minute OHLCV failed: {exc}")
                 return
     else:
-        # ── Swing View (2-5+ Days): Fetch ALL data strictly from local PostgreSQL ──
-        # Bypasses the KIS API to eliminate latency. Data relies on the Prefect ingestion loop.
+        # ── Swing View: Fetch data strictly from local PostgreSQL ──
         with st.spinner("Fetching multi-day minute data from local DB …"):
             from database.db import Database
             import pandas.io.sql as psql
@@ -189,7 +188,6 @@ def render_momentum_pulse_tab(ticker: str) -> None:
                 df = pd.DataFrame()
             else:
                 try:
-                    # Over-fetch slightly to account for weekends
                     lookback_days = int(history_days * 1.5) + 2
                     
                     query = """
@@ -218,7 +216,6 @@ def render_momentum_pulse_tab(ticker: str) -> None:
                 finally:
                     db.close()
 
-            # Timezone Alignment, Resampling, and Trimming
             if not df.empty:
                 # 1. Convert DB UTC to KST
                 df["Datetime"] = pd.to_datetime(df["Datetime"]).dt.tz_convert('Asia/Seoul').dt.tz_localize(None)
@@ -257,11 +254,23 @@ def render_momentum_pulse_tab(ticker: str) -> None:
     indicators = calculate_indicators(df)
     df = pd.concat([df, indicators], axis=1)
 
-    # ── Metrics row ───────────────────────────────────────────────────────
-    c1, c2, c3, c4, c5 = st.columns([1.5, 1.5, 1.5, 1.5, 1.5])
+    # ── Compute OBV and VWAP directly in DataFrame ────────────────────────
+    if not df.empty:
+        cum_vol = df["Volume"].cumsum()
+        cum_vwap = (df["Close"] * df["Volume"]).cumsum()
+        df["VWAP"] = cum_vwap / cum_vol
+
+        obv_change = pd.Series(0, index=df.index, dtype=float)
+        obv_change[df["Close"] > df["Close"].shift(1)] = df["Volume"]
+        obv_change[df["Close"] < df["Close"].shift(1)] = -df["Volume"]
+        df["OBV"] = obv_change.cumsum()
+        df["OBV_signal"] = df["OBV"].ewm(span=20, adjust=False).mean()
+
+    # ── Metrics Row 1: Price Action ───────────────────────────────────────
+    c1, c2, c3 = st.columns([1, 1, 1])
 
     with c1:
-        st.metric("Current Price", _kr_format(quote["current_price"], " KRW"))
+        st.metric("Current Price", _kr_format(quote.get("current_price"), " KRW"))
 
     with c2:
         chg = quote.get("price_change")
@@ -281,7 +290,6 @@ def render_momentum_pulse_tab(ticker: str) -> None:
             st.metric("Day Change", "N/A")
 
     with c3:
-        # Trend from linear regression slope over available history
         if len(df) >= 3:
             closes = df["Close"].values.astype(float)
             x = np.arange(len(closes))
@@ -301,7 +309,12 @@ def render_momentum_pulse_tab(ticker: str) -> None:
         else:
             st.metric("Price Trend", "N/A")
 
-    with c4:
+    st.write("") # Spacer
+
+    # ── Metrics Row 2: Momentum Indicators ────────────────────────────────
+    i1, i2, i3, i4 = st.columns(4)
+
+    with i1:
         if "RSI" in df.columns and not pd.isna(df.iloc[-1]["RSI"]):
             rsi_val = df.iloc[-1]["RSI"]
             if rsi_val > 70:
@@ -313,15 +326,15 @@ def render_momentum_pulse_tab(ticker: str) -> None:
             st.markdown(
                 f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">RSI (14)</div>'
                 f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
-                f'<span style="font-size:1.85rem;font-weight:700;color:{sig_c}">{sig}</span>'
-                f'<span style="font-size:1.75rem">{rsi_val:.2f}</span>'
+                f'<span style="font-size:1.5rem;font-weight:700;color:{sig_c}">{sig}</span>'
+                f'<span style="font-size:1.4rem">{rsi_val:.1f}</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
         else:
             st.metric("RSI (14)", "N/A")
 
-    with c5:
+    with i2:
         if "MACD" in df.columns and not pd.isna(df.iloc[-1]["MACD"]):
             macd_val = df.iloc[-1]["MACD"]
             sig_val = df.iloc[-1].get("MACD_signal")
@@ -335,13 +348,62 @@ def render_momentum_pulse_tab(ticker: str) -> None:
             st.markdown(
                 f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">MACD</div>'
                 f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
-                f'<span style="font-size:1.85rem;font-weight:700;color:{sig_c}">{sig}</span>'
-                f'<span style="font-size:1.75rem;">{macd_val:.4f}</span>'
+                f'<span style="font-size:1.5rem;font-weight:700;color:{sig_c}">{sig}</span>'
+                f'<span style="font-size:1.4rem;">{macd_val:.1f}</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
         else:
             st.metric("MACD", "N/A")
+
+    with i3:
+        if "VWAP" in df.columns and not pd.isna(df.iloc[-1]["VWAP"]):
+            vwap_val = df.iloc[-1]["VWAP"]
+            close_val = df.iloc[-1]["Close"]
+            
+            if close_val > (vwap_val * 1.002):
+                sig, sig_c = "🟢 Above VWAP", "#09ab3b"
+            elif close_val < (vwap_val * 0.998):
+                sig, sig_c = "🔴 Below VWAP", "#ff2b2b"
+            else:
+                sig, sig_c = "🟡 At VWAP", "#faca2b"
+                
+            st.markdown(
+                f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">VWAP Alignment</div>'
+                f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
+                f'<span style="font-size:1.5rem;font-weight:700;color:{sig_c}">{sig}</span>'
+                f'<span style="font-size:1.4rem;">{vwap_val:,.0f}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.metric("VWAP Alignment", "N/A")
+
+    with i4:
+        if "OBV" in df.columns and not pd.isna(df.iloc[-1]["OBV"]):
+            obv_val = df.iloc[-1]["OBV"]
+            obv_sig = df.iloc[-1]["OBV_signal"]
+            
+            if obv_val > obv_sig:
+                sig, sig_c = "🟢 Accumulation", "#09ab3b"
+            else:
+                sig, sig_c = "🔴 Distribution", "#ff2b2b"
+                
+            def _format_obv(val):
+                if abs(val) >= 1_000_000: return f"{val/1_000_000:.1f}M"
+                if abs(val) >= 1_000: return f"{val/1_000:.1f}K"
+                return f"{val:.0f}"
+                
+            st.markdown(
+                f'<div style="font-size:0.875rem;color:rgba(49,51,63,0.6)">OBV Trend</div>'
+                f'<div style="display:flex;align-items:baseline;gap:0.5rem">'
+                f'<span style="font-size:1.5rem;font-weight:700;color:{sig_c}">{sig}</span>'
+                f'<span style="font-size:1.4rem;">{_format_obv(obv_val)}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.metric("OBV Trend", "N/A")
 
     st.divider()
 
@@ -503,34 +565,24 @@ def render_momentum_pulse_tab(ticker: str) -> None:
         row=2, col=1,
     )
 
-    # OBV on secondary y
-    obv = [0]
-    for i in range(1, len(df)):
-        if df["Close"].iloc[i] > df["Close"].iloc[i - 1]:
-            obv.append(obv[-1] + df["Volume"].iloc[i])
-        elif df["Close"].iloc[i] < df["Close"].iloc[i - 1]:
-            obv.append(obv[-1] - df["Volume"].iloc[i])
-        else:
-            obv.append(obv[-1])
-    fig.add_trace(
-        go.Scatter(
-            x=x_idx, y=obv, name="OBV",
-            line=dict(color="#9B59B6", width=1.2),
-            customdata=tick_labels.values,
-            hovertemplate="%{customdata}<br>OBV: %{y:,.0f}<extra></extra>",
-        ),
-        row=2, col=1, secondary_y=True,
-    )
-    fig.update_yaxes(title_text="OBV", showgrid=False, row=2, col=1, secondary_y=True)
-
-    # -- VWAP on price chart -----------------------------------------------
-    if show_vwap:
-        cum_vol = df["Volume"].cumsum()
-        cum_vwap = (df["Close"] * df["Volume"]).cumsum()
-        vwap = cum_vwap / cum_vol
+    # -- OBV on secondary y ------------------------------------------------
+    if "OBV" in df.columns:
         fig.add_trace(
             go.Scatter(
-                x=x_idx, y=vwap, name="VWAP",
+                x=x_idx, y=df["OBV"], name="OBV",
+                line=dict(color="#9B59B6", width=1.2),
+                customdata=tick_labels.values,
+                hovertemplate="%{customdata}<br>OBV: %{y:,.0f}<extra></extra>",
+            ),
+            row=2, col=1, secondary_y=True,
+        )
+        fig.update_yaxes(title_text="OBV", showgrid=False, row=2, col=1, secondary_y=True)
+
+    # -- VWAP on price chart -----------------------------------------------
+    if show_vwap and "VWAP" in df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=x_idx, y=df["VWAP"], name="VWAP",
                 line=dict(color="#FF00FF", width=1.5, dash="dashdot"),
                 customdata=tick_labels.values,
                 hovertemplate="%{customdata}<br>VWAP: %{y:,.0f}<extra></extra>",
