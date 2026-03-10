@@ -224,21 +224,29 @@ class KISDashboardClient:
     def get_minute_ohlcv(
         self,
         stock_code: str,
-        time_unit: str = "1",
+        time_unit: str = "5",
+        days: int = 1,
     ) -> pd.DataFrame:
-        """Fetch intraday minute-bar OHLCV for the current/last trading day.
+        """Fetch intraday minute-bar OHLCV.
 
-        ``time_unit``: minute interval — one of '5', '10', '15', '30', '60', '240'.
+        ``time_unit``: minute interval — '5', '10', '15', '30', '60', '240'.
+        ``days``: number of trading days of minute data to fetch.
 
-        The KIS endpoint returns bars in descending time order, up to ~30
-        bars per call.  This method pages backwards until the full trading
-        day is collected and returns a DataFrame sorted ascending by time.
+        Uses ``FID_PW_DATA_INCU_YN="Y"`` for continuous reverse-chronological
+        pagination across day boundaries.  Progress is tracked by
+        ``(date, time)`` tuples to correctly handle the cursor jumping
+        forward when crossing from one day's open to the previous day's
+        close.
         """
-        rows: list[dict] = []
+        all_rows: list[dict] = []
         hour_cursor = "160000"
-        prev_cursor: str | None = None
+        seen_dates: set[str] = set()
+        prev_key: tuple[str, str] | None = None  # (date, time) of last batch tail
 
-        for _ in range(50):
+        pw_flag = "Y" if days > 1 else "N"
+        max_pages = 60 * days
+
+        for _ in range(max_pages):
             payload = self._get(
                 "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
                 "FHKST03010200",
@@ -247,7 +255,7 @@ class KISDashboardClient:
                     "FID_INPUT_ISCD": stock_code,
                     "FID_ETC_CLS_CODE": time_unit,
                     "FID_INPUT_HOUR_1": hour_cursor,
-                    "FID_PW_DATA_INCU_YN": "N",
+                    "FID_PW_DATA_INCU_YN": pw_flag,
                 },
             )
             output2 = payload.get("output2", [])
@@ -259,7 +267,8 @@ class KISDashboardClient:
                 bsop_date = r.get("stck_bsop_date", "")
                 if not hhmm:
                     continue
-                rows.append({
+                seen_dates.add(bsop_date)
+                all_rows.append({
                     "Date": bsop_date,
                     "Time": hhmm,
                     "Open": self._int(r.get("stck_oprc")),
@@ -269,13 +278,24 @@ class KISDashboardClient:
                     "Volume": self._int(r.get("cntg_vol")),
                 })
 
-            earliest = output2[-1].get("stck_cntg_hour", "")
-            if earliest == prev_cursor or earliest <= "090000":
+            # Stop once we have more trading days than requested
+            if len(seen_dates) > days:
+                # Trim rows from the extra day
+                target_dates = sorted(seen_dates, reverse=True)[:days]
+                all_rows = [r for r in all_rows if r["Date"] in target_dates]
                 break
-            prev_cursor = earliest
-            hour_cursor = earliest
 
-        df = pd.DataFrame(rows)
+            # Detect stuck pagination via (date, time) of last record
+            last = output2[-1]
+            cur_key = (last.get("stck_bsop_date", ""), last.get("stck_cntg_hour", ""))
+            if cur_key == prev_key:
+                break
+            prev_key = cur_key
+
+            # Advance cursor to the earliest time in this batch
+            hour_cursor = last.get("stck_cntg_hour", "")
+
+        df = pd.DataFrame(all_rows)
         if df.empty:
             return df
 
