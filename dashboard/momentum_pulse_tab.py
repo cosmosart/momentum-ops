@@ -203,7 +203,8 @@ def render_momentum_pulse_tab(ticker: str) -> None:
                         FROM kr_minute_ohlcv
                         WHERE ticker = %(ticker)s
                           AND interval_min = %(interval_min)s
-                          AND timestamp >= NOW() - INTERVAL %(lookback)s
+                          -- Fix: Let Postgres cast the string parameter to an interval natively
+                          AND timestamp >= NOW() - CAST(%(lookback)s AS INTERVAL)
                         ORDER BY timestamp ASC
                     """
                     params = {
