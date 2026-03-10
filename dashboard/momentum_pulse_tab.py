@@ -178,7 +178,7 @@ def render_momentum_pulse_tab(ticker: str) -> None:
         if not df.empty and df["Datetime"].dt.tz is not None:
             df["Datetime"] = df["Datetime"].dt.tz_localize(None)
     else:
-        # 1. Fetch historical minute data from the local PostgreSQL database
+        # 1. Fetch 1-minute historical data from the local PostgreSQL database
         with st.spinner("Fetching historical minute data from local DB …"):
             from database.db import Database
             import pandas.io.sql as psql
@@ -189,10 +189,10 @@ def render_momentum_pulse_tab(ticker: str) -> None:
                 df_hist = pd.DataFrame()
             else:
                 try:
-                    # Over-fetch slightly (x1.5) to account for weekends and holidays
                     lookback_days = int(history_days * 1.5) + 2
-                    interval_val = int(time_unit)
+                    interval_val = int(time_unit) # E.g., 10 or 15 from the dropdown
                     
+                    # We ALWAYS fetch the 1-minute baseline from the DB
                     query = """
                         SELECT timestamp as "Datetime", 
                                open_price as "Open", 
@@ -202,18 +202,15 @@ def render_momentum_pulse_tab(ticker: str) -> None:
                                volume as "Volume"
                         FROM kr_minute_ohlcv
                         WHERE ticker = %(ticker)s
-                          AND interval_min = %(interval_min)s
-                          -- Fix: Let Postgres cast the string parameter to an interval natively
+                          AND interval_min = 1 
                           AND timestamp >= NOW() - CAST(%(lookback)s AS INTERVAL)
                         ORDER BY timestamp ASC
                     """
                     params = {
                         "ticker": ticker, 
-                        "interval_min": interval_val, 
                         "lookback": f"{lookback_days} days"
                     }
                     
-                    # psql.read_sql expects a raw DB-API connection object (db.conn)
                     df_hist = psql.read_sql(query, db.conn, params=params)
                     
                 except Exception as exc:
@@ -222,12 +219,22 @@ def render_momentum_pulse_tab(ticker: str) -> None:
                 finally:
                     db.close()
 
-        # 2. Timezone Alignment and Trimming
+        # 2. Timezone Alignment, Dynamic Resampling, and Trimming
         if not df_hist.empty:
-            # DB timestamps are UTC. Convert to KST to match Korean market display.
+            # A. Convert DB UTC to KST
             df_hist["Datetime"] = pd.to_datetime(df_hist["Datetime"]).dt.tz_convert('Asia/Seoul').dt.tz_localize(None)
             
-            # Ensure we strictly hold the requested number of trading days
+            # B. Dynamically resample 1-min data to the target timeframe (e.g., 10min, 15min)
+            if interval_val > 1:
+                df_hist = df_hist.set_index("Datetime").resample(f"{interval_val}min").agg({
+                    "Open": "first",
+                    "High": "max",
+                    "Low": "min",
+                    "Close": "last",
+                    "Volume": "sum"
+                }).dropna().reset_index()
+            
+            # C. Ensure we strictly hold the requested number of trading days
             unique_dates = sorted(df_hist["Datetime"].dt.date.unique())
             if len(unique_dates) > history_days:
                 keep_dates = unique_dates[-history_days:]
@@ -246,8 +253,6 @@ def render_momentum_pulse_tab(ticker: str) -> None:
 
         if parts:
             df = pd.concat(parts, ignore_index=True)
-            
-            # Keep 'last' overwrites overlapping DB entries with the fresher live API ticks
             df = df.drop_duplicates(subset=["Datetime"], keep="last")
             df = df.sort_values("Datetime").reset_index(drop=True)
         else:
