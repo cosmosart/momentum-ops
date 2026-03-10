@@ -180,46 +180,50 @@ def render_momentum_pulse_tab(ticker: str) -> None:
     else:
         # 1. Fetch historical minute data from the local PostgreSQL database
         with st.spinner("Fetching historical minute data from local DB …"):
-            try:
-                # Import your DB utility here. Adjust the path if necessary.
-                from database.connection import get_connection 
-                import pandas.io.sql as psql
-                
-                engine = get_connection()
-                
-                # Over-fetch slightly (x1.5) to account for weekends and holidays
-                lookback_days = int(history_days * 1.5) + 2
-                interval_val = int(time_unit)
-                
-                # Parameterized query to prevent SQL injection and cache execution plans
-                query = """
-                    SELECT timestamp as "Datetime", 
-                           open_price as "Open", 
-                           high_price as "High", 
-                           low_price as "Low", 
-                           close_price as "Close", 
-                           volume as "Volume"
-                    FROM kr_minute_ohlcv
-                    WHERE ticker = %(ticker)s
-                      AND interval_min = %(interval_min)s
-                      AND timestamp >= NOW() - INTERVAL %(lookback)s
-                    ORDER BY timestamp ASC
-                """
-                params = {
-                    "ticker": ticker, 
-                    "interval_min": interval_val, 
-                    "lookback": f"{lookback_days} days"
-                }
-                
-                df_hist = psql.read_sql(query, engine, params=params)
-                
-            except Exception as exc:
-                st.error(f"Local database fetch failed: {exc}")
+            from database.db import Database
+            import pandas.io.sql as psql
+            
+            db = Database()
+            if not db.connect():
+                st.error("Failed to connect to local database for historical minute data.")
                 df_hist = pd.DataFrame()
+            else:
+                try:
+                    # Over-fetch slightly (x1.5) to account for weekends and holidays
+                    lookback_days = int(history_days * 1.5) + 2
+                    interval_val = int(time_unit)
+                    
+                    query = """
+                        SELECT timestamp as "Datetime", 
+                               open_price as "Open", 
+                               high_price as "High", 
+                               low_price as "Low", 
+                               close_price as "Close", 
+                               volume as "Volume"
+                        FROM kr_minute_ohlcv
+                        WHERE ticker = %(ticker)s
+                          AND interval_min = %(interval_min)s
+                          AND timestamp >= NOW() - INTERVAL %(lookback)s
+                        ORDER BY timestamp ASC
+                    """
+                    params = {
+                        "ticker": ticker, 
+                        "interval_min": interval_val, 
+                        "lookback": f"{lookback_days} days"
+                    }
+                    
+                    # psql.read_sql expects a raw DB-API connection object (db.conn)
+                    df_hist = psql.read_sql(query, db.conn, params=params)
+                    
+                except Exception as exc:
+                    st.error(f"Local database fetch failed: {exc}")
+                    df_hist = pd.DataFrame()
+                finally:
+                    db.close()
 
         # 2. Timezone Alignment and Trimming
         if not df_hist.empty:
-            # DB timestamps are UTC. Convert to KST to match Korean market display and df_today.
+            # DB timestamps are UTC. Convert to KST to match Korean market display.
             df_hist["Datetime"] = pd.to_datetime(df_hist["Datetime"]).dt.tz_convert('Asia/Seoul').dt.tz_localize(None)
             
             # Ensure we strictly hold the requested number of trading days
@@ -242,8 +246,7 @@ def render_momentum_pulse_tab(ticker: str) -> None:
         if parts:
             df = pd.concat(parts, ignore_index=True)
             
-            # The critical fix: By keeping 'last', the live data from df_today 
-            # gracefully overwrites any overlapping timestamps from the DB.
+            # Keep 'last' overwrites overlapping DB entries with the fresher live API ticks
             df = df.drop_duplicates(subset=["Datetime"], keep="last")
             df = df.sort_values("Datetime").reset_index(drop=True)
         else:
