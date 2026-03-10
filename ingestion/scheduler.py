@@ -5,14 +5,14 @@ This file programmatically deploys the KR market high-frequency ingestion flow.
 Legacy APScheduler logic has been fully migrated to ingestion/flows.py.
 """
 
-from prefect.deployments import Deployment
+from prefect.deployments.deployments import Deployment
 from prefect.server.schemas.schedules import CronSchedule
 from ingestion.flows import kr_minute_ingestion_flow
 
 def deploy_kr_ingestion():
     """
     Builds and applies the Prefect deployment for Korean market minute-data ingestion.
-    Utilizes two separate cron schedules to strictly halt polling at exactly 15:30 KST.
+    Utilizes two separate cron schedules to strictly halt polling after the 15:30 KST close.
     """
     
     # Schedule 1: 09:00 to 14:55 KST (Standard trading hours)
@@ -21,14 +21,15 @@ def deploy_kr_ingestion():
         timezone="Asia/Seoul"
     )
     
-    # Schedule 2: 15:00 to 15:30 KST (Captures the exact closing cross, halts at 15:30)
+    # Schedule 2: 15:00 to 15:35 KST 
+    # (Captures the exact closing cross, plus a 15:35 sweep to guarantee the final settled EOD price)
     closing_schedule = CronSchedule(
-        cron="0,5,10,15,20,25,30 15 * * 1-5", 
+        cron="0,5,10,15,20,25,30,35 15 * * 1-5", 
         timezone="Asia/Seoul"
     )
 
     # Note: Prefect deployments accept multiple schedules via the 'schedules' list parameter.
-    # The flow dynamically fetches active KR tickers from Postgres, so we no longer pass them here.
+    # The flow dynamically fetches active KR tickers from Postgres.
     deployment = Deployment.build_from_flow(
         flow=kr_minute_ingestion_flow,
         name="kr-swing-5min-ingestion",
