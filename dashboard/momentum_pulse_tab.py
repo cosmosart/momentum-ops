@@ -163,17 +163,20 @@ def render_momentum_pulse_tab(ticker: str) -> None:
             st.error(f"KIS API call failed: {exc}")
             return
 
+    time_unit = timeframe.replace("min", "")
+
+    # Always fetch today's live data from KIS
+    with st.spinner("Fetching today's intraday bars from KIS …"):
+        try:
+            df_today = client.get_minute_ohlcv(ticker, time_unit=time_unit)
+        except RuntimeError as exc:
+            st.error(f"KIS minute OHLCV failed: {exc}")
+            return
+
     if history_days == 1:
-        # Single day: use KIS live minute bars
-        with st.spinner("Fetching intraday bars from KIS …"):
-            try:
-                time_unit = timeframe.replace("min", "")
-                df = client.get_minute_ohlcv(ticker, time_unit=time_unit)
-            except RuntimeError as exc:
-                st.error(f"KIS minute OHLCV failed: {exc}")
-                return
+        df = df_today
     else:
-        # Multi-day: use yfinance (KIS minute endpoint only supports current day)
+        # Previous days: yfinance; today: KIS live bars
         import yfinance as yf
 
         _yf_interval_map = {
@@ -181,21 +184,49 @@ def render_momentum_pulse_tab(ticker: str) -> None:
             "30min": "30m", "60min": "1h", "240min": "1h",
         }
         yf_interval = _yf_interval_map[timeframe]
-        yf_period = f"{history_days}d"
+        # Fetch extra days so we can strip today and still have enough history
+        yf_period = f"{history_days + 2}d"
 
-        with st.spinner(f"Fetching {history_days}-day intraday data …"):
+        with st.spinner(f"Fetching previous days from yfinance …"):
             try:
                 ticker_obj = yf.Ticker(yf_symbol)
-                df = ticker_obj.history(period=yf_period, interval=yf_interval)
+                df_hist = ticker_obj.history(period=yf_period, interval=yf_interval)
             except Exception as exc:
                 st.error(f"yfinance fetch failed: {exc}")
                 return
 
-        if not df.empty:
-            df = df.reset_index()
-            date_col = "Datetime" if "Datetime" in df.columns else "Date"
-            df = df.rename(columns={date_col: "Datetime"})
-            df["Datetime"] = pd.to_datetime(df["Datetime"])
+        if not df_hist.empty:
+            df_hist = df_hist.reset_index()
+            date_col = "Datetime" if "Datetime" in df_hist.columns else "Date"
+            df_hist = df_hist.rename(columns={date_col: "Datetime"})
+            df_hist["Datetime"] = pd.to_datetime(df_hist["Datetime"])
+            # Remove timezone info for merging
+            if df_hist["Datetime"].dt.tz is not None:
+                df_hist["Datetime"] = df_hist["Datetime"].dt.tz_localize(None)
+
+            # Strip today's data from yfinance — KIS has fresher today bars
+            today_str = pd.Timestamp.now().strftime("%Y-%m-%d")
+            df_hist = df_hist[df_hist["Datetime"].dt.strftime("%Y-%m-%d") < today_str]
+
+            # Keep only the requested number of previous days
+            if not df_hist.empty:
+                prev_dates = sorted(df_hist["Datetime"].dt.date.unique())
+                keep_dates = prev_dates[-(history_days - 1):]
+                df_hist = df_hist[df_hist["Datetime"].dt.date.isin(keep_dates)]
+
+        # Normalize columns so both sides match
+        common_cols = ["Datetime", "Open", "High", "Low", "Close", "Volume"]
+        parts = []
+        if not df_hist.empty:
+            parts.append(df_hist[[c for c in common_cols if c in df_hist.columns]])
+        if not df_today.empty:
+            parts.append(df_today[[c for c in common_cols if c in df_today.columns]])
+
+        if parts:
+            df = pd.concat(parts, ignore_index=True)
+            df = df.sort_values("Datetime").reset_index(drop=True)
+        else:
+            df = pd.DataFrame(columns=common_cols)
 
     if df.empty:
         st.warning("No OHLCV data returned for this ticker / period.")
