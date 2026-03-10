@@ -136,7 +136,7 @@ def render_momentum_pulse_tab(ticker: str) -> None:
         ma_periods = st.multiselect(
             "Moving Averages",
             options=["5", "10", "20", "25", "50", "100", "200"],
-            default=["5", "25"],
+            default=["5", "25", "200"],
             help="MA periods to overlay on the price chart",
         )
 
