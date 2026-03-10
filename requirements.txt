@@ -2,6 +2,7 @@
 streamlit>=1.44.0
 pandas>=2.2.3
 numpy>=1.26.4
+httpx>=0.28.1
 
 # Database (PostgreSQL 18 compatible)
 psycopg[binary]>=3.2.0

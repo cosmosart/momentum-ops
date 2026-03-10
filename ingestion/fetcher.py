@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 import yfinance as yf
 import pandas as pd
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -102,3 +103,82 @@ class DataFetcher:
         except Exception as e:
             logger.error(f"Failed to get info for {self.ticker}: {e}")
             return {}
+
+class KISFetcher:
+    def __init__(self, api_key: str, api_secret: str, token: str):
+        self.base_url = "https://openapi.koreainvestment.com:9443"
+        self.headers = {
+            "Content-Type": "application/json",
+            "authorization": f"Bearer {token}",
+            "appkey": api_key,
+            "appsecret": api_secret,
+            "tr_id": "FHKST03010200" # TR_ID strictly returns 1-minute data
+        }
+        self.kst_tz = pytz.timezone('Asia/Seoul')
+
+    def fetch_minute_data(self, ticker: str, interval_min: int = 3) -> pd.DataFrame:
+        try:
+            url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice"
+            
+            # 1. Enforce KST for the request regardless of NAS server time
+            current_kst_time = datetime.now(self.kst_tz).strftime("%H%M%00")
+            
+            params = {
+                "FID_ETC_CLS_CODE": "",
+                "FID_COND_MRKT_DIV_CODE": "J",
+                "FID_INPUT_ISCD": ticker,
+                "FID_INPUT_HOUR_1": current_kst_time,
+                "FID_PW_DATA_INCU_YN": "N"
+            }
+            
+            response = httpx.get(url, headers=self.headers, params=params, timeout=10.0)
+            response.raise_for_status()
+            
+            candles = response.json().get("output2", [])
+            df = pd.DataFrame(candles)
+            
+            if df.empty:
+                logger.warning(f"No minute data returned from KIS for {ticker}")
+                return df
+                
+            # Parse strings and apply KST timezone
+            df['datetime_str'] = df['stck_bsop_date'] + df['stck_cntg_hour']
+            df['timestamp'] = pd.to_datetime(df['datetime_str'], format='%Y%m%d%H%M%S').dt.tz_localize('Asia/Seoul')
+            
+            df = df.rename(columns={
+                'stck_oprc': 'open_price',
+                'stck_hgpr': 'high_price',
+                'stck_lwpr': 'low_price',
+                'stck_prpr': 'close_price',
+                'cntg_vol': 'volume',
+                'acml_tr_pbmn': 'accumulated_value'
+            })
+            
+            numeric_cols = ['open_price', 'high_price', 'low_price', 'close_price', 'volume', 'accumulated_value']
+            df[numeric_cols] = df[numeric_cols].astype(float)
+            
+            # 2. Resample the 1-minute API data into the requested timeframe (e.g., 3-min or 5-min)
+            df = df.set_index('timestamp').sort_index()
+            df = df.resample(f'{interval_min}min').agg({
+                'open_price': 'first',
+                'high_price': 'max',
+                'low_price': 'min',
+                'close_price': 'last',
+                'volume': 'sum',
+                'accumulated_value': 'sum'
+            }).dropna().reset_index()
+            
+            # 3. Convert to UTC to match DataFetcher (yfinance) logic before Postgres insertion
+            df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
+            
+            df['ticker'] = ticker
+            df['interval_min'] = interval_min
+            
+            return df[['ticker', 'interval_min', 'timestamp'] + numeric_cols]
+            
+        except httpx.HTTPError as e:
+            logger.error(f"HTTP error fetching KIS data for {ticker}: {e}")
+            return pd.DataFrame()
+        except Exception as e:
+            logger.error(f"Unexpected error processing KIS data for {ticker}: {e}")
+            return pd.DataFrame()
