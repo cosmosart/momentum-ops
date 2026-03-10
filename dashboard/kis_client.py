@@ -242,6 +242,7 @@ class KISDashboardClient:
         sessions_seen = 0
         prev_date = None
         prev_earliest_key = None        # (date, time) to detect stuck pagination
+        batch_dates: set[str] = set()   # dates seen in current batch
 
         max_pages = 30 * days           # scale pagination cap to days requested
         for _ in range(max_pages):
@@ -260,11 +261,13 @@ class KISDashboardClient:
             if not output2:
                 break
 
+            batch_dates.clear()
             for r in output2:
                 hhmm = r.get("stck_cntg_hour", "")
                 bsop_date = r.get("stck_bsop_date", "")
                 if not hhmm:
                     continue
+                batch_dates.add(bsop_date)
 
                 # Track session boundaries — count each unique date
                 # (today = 1, previous day = 2, etc.)
@@ -301,8 +304,14 @@ class KISDashboardClient:
                 break
             prev_earliest_key = earliest_key
 
-            # Use the earliest time as the next cursor
-            hour_cursor = earliest_time
+            # If this batch contains a day boundary (multiple dates), or we
+            # reached the opening of a session (<=0901), reset the cursor to
+            # market close so the next call pages through the previous day
+            # from the top rather than from the opening time.
+            if len(batch_dates) > 1 or earliest_time <= "090100":
+                hour_cursor = "160000"
+            else:
+                hour_cursor = earliest_time
 
         df = pd.DataFrame(all_rows)
         if df.empty:
