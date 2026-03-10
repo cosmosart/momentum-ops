@@ -117,40 +117,6 @@ class KISDashboardClient:
             )
         return payload
 
-    def _get_raw(
-        self, path: str, tr_id: str, params: dict[str, str],
-        *, tr_cont: str = "",
-        ctx_area_fk: str = "", ctx_area_nk: str = "",
-    ) -> tuple[dict, str, str, str]:
-        """Low-level GET that exposes KIS continuation fields.
-
-        Returns ``(payload, tr_cont, ctx_area_fk, ctx_area_nk)`` so the
-        caller can page through multi-part result sets.
-        """
-        headers = self._headers(tr_id)
-        if tr_cont:
-            headers["tr_cont"] = tr_cont
-        resp = requests.get(
-            f"{self.credentials.base_url}{path}",
-            headers=headers,
-            params={
-                **params,
-                **({"CTX_AREA_FK100": ctx_area_fk} if ctx_area_fk else {}),
-                **({"CTX_AREA_NK100": ctx_area_nk} if ctx_area_nk else {}),
-            },
-            timeout=30,
-        )
-        payload = resp.json()
-        if resp.status_code != 200 or payload.get("rt_cd") != "0":
-            raise RuntimeError(
-                f"KIS API error [{resp.status_code}] "
-                f"{payload.get('msg_cd')}: {payload.get('msg1')}"
-            )
-        out_tr_cont = resp.headers.get("tr_cont", "")
-        out_fk = payload.get("ctx_area_fk100", resp.headers.get("ctx_area_fk100", ""))
-        out_nk = payload.get("ctx_area_nk100", resp.headers.get("ctx_area_nk100", ""))
-        return payload, out_tr_cont, out_fk, out_nk
-
     @staticmethod
     def _int(value: str | int | None) -> int | None:
         if value in (None, ""):
@@ -259,41 +225,30 @@ class KISDashboardClient:
         self,
         stock_code: str,
         time_unit: str = "5",
-        days: int = 1,
     ) -> pd.DataFrame:
-        """Fetch intraday minute-bar OHLCV.
+        """Fetch intraday minute-bar OHLCV for the current/last trading day.
 
         ``time_unit``: minute interval — '5', '10', '15', '30', '60', '240'.
-        ``days``: number of trading days of minute data to fetch.
 
-        Uses the KIS continuation mechanism (``tr_cont`` header +
-        ``ctx_area_fk100``/``ctx_area_nk100`` context) to page across
-        day boundaries properly, since the time-only cursor (HHMMSS)
-        cannot distinguish between calendar days.
+        The KIS endpoint returns bars in descending time order, up to ~30
+        bars per call.  This method pages backwards until the full trading
+        day is collected and returns a DataFrame sorted ascending by time.
         """
-        path = "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice"
-        tr_id = "FHKST03010200"
-        base_params = {
-            "FID_COND_MRKT_DIV_CODE": "J",
-            "FID_INPUT_ISCD": stock_code,
-            "FID_ETC_CLS_CODE": time_unit,
-            "FID_INPUT_HOUR_1": "160000",
-            "FID_PW_DATA_INCU_YN": "Y",
-        }
+        rows: list[dict] = []
+        hour_cursor = "160000"
+        prev_cursor: str | None = None
 
-        all_rows: list[dict] = []
-        seen_dates: set[str] = set()
-
-        # State for KIS continuation
-        tr_cont = ""
-        ctx_fk = ""
-        ctx_nk = ""
-
-        max_pages = 60 * days
-        for _ in range(max_pages):
-            payload, tr_cont_out, ctx_fk_out, ctx_nk_out = self._get_raw(
-                path, tr_id, base_params,
-                tr_cont=tr_cont, ctx_area_fk=ctx_fk, ctx_area_nk=ctx_nk,
+        for _ in range(50):
+            payload = self._get(
+                "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
+                "FHKST03010200",
+                {
+                    "FID_COND_MRKT_DIV_CODE": "J",
+                    "FID_INPUT_ISCD": stock_code,
+                    "FID_ETC_CLS_CODE": time_unit,
+                    "FID_INPUT_HOUR_1": hour_cursor,
+                    "FID_PW_DATA_INCU_YN": "N",
+                },
             )
             output2 = payload.get("output2", [])
             if not output2:
@@ -304,8 +259,7 @@ class KISDashboardClient:
                 bsop_date = r.get("stck_bsop_date", "")
                 if not hhmm:
                     continue
-                seen_dates.add(bsop_date)
-                all_rows.append({
+                rows.append({
                     "Date": bsop_date,
                     "Time": hhmm,
                     "Open": self._int(r.get("stck_oprc")),
@@ -315,30 +269,13 @@ class KISDashboardClient:
                     "Volume": self._int(r.get("cntg_vol")),
                 })
 
-            # Stop once we have more trading days than requested
-            if len(seen_dates) > days:
-                target_dates = sorted(seen_dates, reverse=True)[:days]
-                all_rows = [r for r in all_rows if r["Date"] in target_dates]
+            earliest = output2[-1].get("stck_cntg_hour", "")
+            if earliest == prev_cursor or earliest <= "090000":
                 break
+            prev_cursor = earliest
+            hour_cursor = earliest
 
-            # Use continuation if the server signals more data ("M"/"F")
-            if tr_cont_out in ("M", "F") and (ctx_fk_out or ctx_nk_out):
-                tr_cont = "N"
-                ctx_fk = ctx_fk_out
-                ctx_nk = ctx_nk_out
-            else:
-                # No continuation — fall back to time-cursor paging
-                # (works within a single day)
-                last_time = output2[-1].get("stck_cntg_hour", "")
-                if last_time == base_params["FID_INPUT_HOUR_1"]:
-                    break  # stuck
-                base_params = {**base_params, "FID_INPUT_HOUR_1": last_time}
-                # Reset continuation state
-                tr_cont = ""
-                ctx_fk = ""
-                ctx_nk = ""
-
-        df = pd.DataFrame(all_rows)
+        df = pd.DataFrame(rows)
         if df.empty:
             return df
 

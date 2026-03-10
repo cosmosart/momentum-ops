@@ -153,18 +153,52 @@ def render_momentum_pulse_tab(ticker: str) -> None:
         sr_levels = st.selectbox("Levels", options=[1, 2, 3, 4, 5], index=0) if show_sr else 1
 
     # ── Fetch data ────────────────────────────────────────────────────────
+    yf_symbol = st.session_state.get("yf_symbol", ticker)
+
     with st.spinner("Fetching data from KIS …"):
         try:
             quote = client.get_realtime_price(ticker)
             investor = client.get_investor_snapshot(ticker)
-            time_unit = timeframe.replace("min", "")
-            df = client.get_minute_ohlcv(ticker, time_unit=time_unit, days=history_days)
         except RuntimeError as exc:
             st.error(f"KIS API call failed: {exc}")
             return
 
+    if history_days == 1:
+        # Single day: use KIS live minute bars
+        with st.spinner("Fetching intraday bars from KIS …"):
+            try:
+                time_unit = timeframe.replace("min", "")
+                df = client.get_minute_ohlcv(ticker, time_unit=time_unit)
+            except RuntimeError as exc:
+                st.error(f"KIS minute OHLCV failed: {exc}")
+                return
+    else:
+        # Multi-day: use yfinance (KIS minute endpoint only supports current day)
+        import yfinance as yf
+
+        _yf_interval_map = {
+            "5min": "5m", "10min": "15m", "15min": "15m",
+            "30min": "30m", "60min": "1h", "240min": "1h",
+        }
+        yf_interval = _yf_interval_map[timeframe]
+        yf_period = f"{history_days}d"
+
+        with st.spinner(f"Fetching {history_days}-day intraday data …"):
+            try:
+                ticker_obj = yf.Ticker(yf_symbol)
+                df = ticker_obj.history(period=yf_period, interval=yf_interval)
+            except Exception as exc:
+                st.error(f"yfinance fetch failed: {exc}")
+                return
+
+        if not df.empty:
+            df = df.reset_index()
+            date_col = "Datetime" if "Datetime" in df.columns else "Date"
+            df = df.rename(columns={date_col: "Datetime"})
+            df["Datetime"] = pd.to_datetime(df["Datetime"])
+
     if df.empty:
-        st.warning("No OHLCV history returned by KIS for this ticker.")
+        st.warning("No OHLCV data returned for this ticker / period.")
         return
 
     # ── Compute MAs ───────────────────────────────────────────────────────
