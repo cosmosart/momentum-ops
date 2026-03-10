@@ -285,7 +285,11 @@ class KISDashboardClient:
         )
         # Drop bars whose timestamp is in the future (KIS pre-fills slots)
         now = pd.Timestamp.now()
-        df = df[df["Datetime"] <= now]
+        market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+        market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
+        # If market is open, filter out future bars. If after close, keep all bars for today.
+        if market_open <= now < market_close:
+            df = df[df["Datetime"] <= now]
         df = df.sort_values("Datetime").reset_index(drop=True)
         return df
 
