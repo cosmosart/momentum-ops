@@ -241,6 +241,7 @@ class KISDashboardClient:
         hour_cursor = "160000"          # start from market close (16:00)
         sessions_seen = 0
         prev_date = None
+        prev_earliest_key = None        # (date, time) to detect stuck pagination
 
         max_pages = 30 * days           # scale pagination cap to days requested
         for _ in range(max_pages):
@@ -289,11 +290,19 @@ class KISDashboardClient:
             if sessions_seen > days:
                 break
 
-            # Move cursor to the earliest time in this batch to page further
-            earliest = output2[-1].get("stck_cntg_hour", "")
-            if earliest >= hour_cursor:
+            # Determine the earliest (date, time) in this batch
+            last_rec = output2[-1]
+            earliest_time = last_rec.get("stck_cntg_hour", "")
+            earliest_date = last_rec.get("stck_bsop_date", "")
+            earliest_key = (earliest_date, earliest_time)
+
+            # If no progress compared to last batch, stop to avoid infinite loop
+            if earliest_key == prev_earliest_key:
                 break
-            hour_cursor = earliest
+            prev_earliest_key = earliest_key
+
+            # Use the earliest time as the next cursor
+            hour_cursor = earliest_time
 
         df = pd.DataFrame(all_rows)
         if df.empty:
