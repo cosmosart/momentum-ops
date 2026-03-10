@@ -265,11 +265,15 @@ class KISDashboardClient:
                 if not hhmm:
                     continue
 
-                # Track session boundaries (date changes)
+                # Track session boundaries — count each unique date
+                # (today = 1, previous day = 2, etc.)
                 if bsop_date and bsop_date != prev_date:
-                    if prev_date is not None:
-                        sessions_seen += 1
+                    sessions_seen += 1
                     prev_date = bsop_date
+
+                # Stop collecting once we exceed the requested days
+                if sessions_seen > days:
+                    break
 
                 all_rows.append({
                     "Date": bsop_date,
@@ -281,8 +285,8 @@ class KISDashboardClient:
                     "Volume": self._int(r.get("cntg_vol")),
                 })
 
-            # Stop if we have collected enough sessions
-            if sessions_seen >= days:
+            # Stop paging if we already have enough days
+            if sessions_seen > days:
                 break
 
             # Move cursor to the earliest time in this batch to page further
