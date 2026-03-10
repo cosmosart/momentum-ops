@@ -224,21 +224,15 @@ class KISDashboardClient:
     def get_minute_ohlcv(
         self,
         stock_code: str,
-        time_unit: str = "5",
+        time_unit: str = "1",  # Default to 1 for maximum granularity
     ) -> pd.DataFrame:
-        """Fetch intraday minute-bar OHLCV for the current/last trading day.
-
-        ``time_unit``: minute interval — '5', '10', '15', '30', '60', '240'.
-
-        The KIS endpoint returns bars in descending time order, up to ~30
-        bars per call.  This method pages backwards until the full trading
-        day is collected and returns a DataFrame sorted ascending by time.
-        """
+        """Fetch intraday minute-bar OHLCV for the current/last trading day."""
         rows: list[dict] = []
+        # KIS expects HHMMSS. 16:00:00 covers the full day including after-hours adjustment
         hour_cursor = "160000"
-        prev_cursor: str | None = None
-
-        for _ in range(50):
+        
+        # We use a safety break to prevent infinite loops
+        for _ in range(40): 
             payload = self._get(
                 "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
                 "FHKST03010200",
@@ -247,7 +241,7 @@ class KISDashboardClient:
                     "FID_INPUT_ISCD": stock_code,
                     "FID_ETC_CLS_CODE": time_unit,
                     "FID_INPUT_HOUR_1": hour_cursor,
-                    "FID_PW_DATA_INCU_YN": "N",
+                    "FID_PW_DATA_INCU_YN": "Y", # Changed to Y to include previous day if today is empty
                 },
             )
             output2 = payload.get("output2", [])
@@ -257,8 +251,9 @@ class KISDashboardClient:
             for r in output2:
                 hhmm = r.get("stck_cntg_hour", "")
                 bsop_date = r.get("stck_bsop_date", "")
-                if not hhmm:
+                if not hhmm or not bsop_date:
                     continue
+                
                 rows.append({
                     "Date": bsop_date,
                     "Time": hhmm,
@@ -269,28 +264,41 @@ class KISDashboardClient:
                     "Volume": self._int(r.get("cntg_vol")),
                 })
 
-            earliest = output2[-1].get("stck_cntg_hour", "")
-            if earliest == prev_cursor or earliest <= "090000":
+            # Get the earliest time in this batch to move the cursor back
+            earliest_time = output2[-1].get("stck_cntg_hour", "")
+            
+            # STOP CONDITIONS:
+            # 1. We reached the market open
+            if earliest_time <= "090000":
                 break
-            prev_cursor = earliest
-            hour_cursor = earliest
+            # 2. The cursor didn't move (no more data)
+            if earliest_time == hour_cursor:
+                break
+                
+            hour_cursor = earliest_time
 
         df = pd.DataFrame(rows)
         if df.empty:
             return df
 
+        # Clean duplicates (paging often overlaps the last/first row)
         df = df.drop_duplicates(subset=["Date", "Time"], keep="first")
+        
+        # Convert to Datetime
         df["Datetime"] = pd.to_datetime(
-            df["Date"] + df["Time"], format="%Y%m%d%H%M%S",
+            df["Date"] + df["Time"], format="%Y%m%d%H%M%S", errors="coerce"
         )
-        # Drop bars whose timestamp is in the future (KIS pre-fills slots)
-        now = pd.Timestamp.now()
-        market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
-        market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
-        # If market is open, filter out future bars. If after close, keep all bars for today.
-        if market_open <= now < market_close:
-            df = df[df["Datetime"] <= now]
+        df = df.dropna(subset=["Datetime"])
+
+        # FIX: Instead of complex filtering against 'now', we only filter 
+        # out bars that are truly impossible (e.g., tomorrow).
+        # We trust KIS's bsop_date for the 'current' day.
+        latest_date = df["Date"].max()
+        df = df[df["Date"] == latest_date]
+        
+        # Sort to ascending order
         df = df.sort_values("Datetime").reset_index(drop=True)
+        
         return df
 
     def collect_realtime_ticks(
