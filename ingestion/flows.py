@@ -534,39 +534,43 @@ def fetch_and_store_ticker(ticker: str, fetcher: KISFetcher) -> None:
     log = get_run_logger()
     df = fetcher.fetch_minute_data(ticker)
     
-    if df.empty:
-        log.warning("No minute data returned for %s.", ticker)
+    if df is None or df.empty:
+        log.warning(f"No minute data for {ticker} - Check API status/Token.")
         return
         
-    # Prepare tuples for standard executemany insertion
+    # FORCE TIMEZONE: Ensure Python knows this is Seoul time before sending to PG
+    # KIS usually returns KST. We localize to Asia/Seoul then let the driver handle UTC conversion.
+    df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize('Asia/Seoul')
+    
+    query = """
+        INSERT INTO kr_minute_ohlcv 
+            (ticker, interval_min, timestamp, open_price, high_price, low_price, close_price, volume, accumulated_value)
+        VALUES %s
+        ON CONFLICT (ticker, interval_min, timestamp) DO NOTHING
+    """
+    
     rows = [
         (
-            r["ticker"],
+            ticker,
             int(r["interval_min"]),
-            r["timestamp"],
+            r["timestamp"], # Driver converts localized datetime to PG Timestamptz
             float(r["open_price"]),
             float(r["high_price"]),
             float(r["low_price"]),
             float(r["close_price"]),
             int(r["volume"]),
-            float(r["accumulated_value"]) if pd.notna(r["accumulated_value"]) else 0.0
+            float(r.get("accumulated_value", 0))
         )
         for _, r in df.iterrows()
     ]
     
-    query = """
-        INSERT INTO kr_minute_ohlcv 
-            (ticker, interval_min, timestamp, open_price, high_price, low_price, close_price, volume, accumulated_value)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (ticker, interval_min, timestamp) DO NOTHING
-    """
-    
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.executemany(query, rows)
+            execute_values(cur, query, rows)
+            inserted = cur.rowcount
         conn.commit()
         
-    log.info("Upserted minute data for %s. Evaluated %d rows.", ticker, len(rows))
+    log.info(f"Ticker {ticker}: {len(rows)} rows evaluated, {inserted} NEW rows added.")
 
 
 @flow(
