@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any
 import yfinance as yf
 import pandas as pd
 import httpx
+import pytz
 
 logger = logging.getLogger(__name__)
 
