@@ -339,6 +339,15 @@ def run_inference_and_persist(ticker: str, region: str, daily_df: pd.DataFrame) 
         conn.commit()
     log.info("%s — analysis row persisted for %s", ticker, latest_date)
 
+@task
+def verify_insertion(ticker: str, table: str):
+    log = get_run_logger()
+    query = f"SELECT MAX(date) FROM {table} WHERE ticker = %s"
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, (ticker,))
+            res = cur.fetchone()
+            log.info(f"Latest record in {table} for {ticker}: {res}")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Sub-flow: process a single ticker
