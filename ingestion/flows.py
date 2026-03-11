@@ -17,13 +17,13 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, datetime, timezone
+import pathlib
+from datetime import date
 from typing import Any
 
 import pandas as pd
 from prefect import flow, get_run_logger, task
 from prefect.tasks import task_input_hash
-from psycopg import rows
 
 from ingestion.fetcher import DataFetcher
 from models.features import engineer_features
@@ -32,10 +32,6 @@ from shared.config import settings, to_yf_symbol
 from shared.database import get_connection
 
 from .fetcher import KISFetcher
-from sqlalchemy import Table, MetaData
-from sqlalchemy.dialects.postgresql import insert
-import pathlib
-import os
 
 logger = logging.getLogger(__name__)
 
