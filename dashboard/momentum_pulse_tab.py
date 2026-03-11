@@ -190,28 +190,27 @@ def render_momentum_pulse_tab(ticker: str) -> None:
                 try:
                     lookback_days = int(history_days * 1.5) + 2
                     
+                    # 1. Fetch the raw UTC timestamp directly (no SQL tz math)
                     query = """
-                            SELECT 
-                                    timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Seoul' as "Datetime", 
-                                    open_price as "Open", 
-                                    high_price as "High", 
-                                    low_price as "Low", 
-                                    close_price as "Close", 
-                                    volume as "Volume"
-                                FROM kr_minute_ohlcv
-                                WHERE ticker = %(ticker)s
-                                AND interval_min = 1
-                                -- Ensure we are looking at the 'now' in Seoul, not UTC
-                                AND timestamp >= (NOW() AT TIME ZONE 'Asia/Seoul' - CAST(%(lookback)s AS INTERVAL))
-                                ORDER BY timestamp ASC
-                            """
+                        SELECT 
+                            timestamp as "Datetime", 
+                            open_price as "Open", 
+                            high_price as "High", 
+                            low_price as "Low", 
+                            close_price as "Close", 
+                            volume as "Volume"
+                        FROM kr_minute_ohlcv
+                        WHERE ticker = %(ticker)s
+                        AND interval_min = 1
+                        AND timestamp >= NOW() - CAST(%(lookback)s AS INTERVAL)
+                        ORDER BY timestamp ASC
+                    """
                     params = {
                         "ticker": ticker, 
                         "lookback": f"{lookback_days} days"
                     }
                     
                     df = psql.read_sql(query, db.conn, params=params)
-                    df['timestamp'] = df['timestamp'].dt.tz_convert('Asia/Tokyo')
                     
                 except Exception as exc:
                     st.error(f"Local database fetch failed: {exc}")
