@@ -23,6 +23,7 @@ from typing import Any
 import pandas as pd
 from prefect import flow, get_run_logger, task
 from prefect.tasks import task_input_hash
+from psycopg import rows
 
 from ingestion.fetcher import DataFetcher
 from models.features import engineer_features
@@ -158,9 +159,12 @@ def upsert_daily_prices(ticker: str, region: str, df: pd.DataFrame) -> int:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.executemany(query, rows)
-        conn.commit()
-    log.info("%s — upserted %d daily rows", ticker, len(rows))
-    return len(rows)
+            row_count = cur.rowcount # This tells you how many were actually touched
+            conn.commit()
+    
+    if row_count == 0:
+        log.warning(f"{ticker}: Database reported 0 rows affected. Conflict or empty batch.")
+    return row_count
 
 
 @task(
