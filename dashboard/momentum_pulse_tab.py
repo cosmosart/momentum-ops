@@ -211,6 +211,7 @@ def render_momentum_pulse_tab(ticker: str) -> None:
                     }
                     
                     df = psql.read_sql(query, db.conn, params=params)
+                    df['timestamp'] = df['timestamp'].dt.tz_convert('Asia/Tokyo')
                     
                 except Exception as exc:
                     st.error(f"Local database fetch failed: {exc}")
