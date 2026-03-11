@@ -117,7 +117,7 @@ class KISFetcher:
         }
         self.kst_tz = pytz.timezone('Asia/Seoul')
 
-    def fetch_minute_data(self, ticker: str, interval_min: int = 3) -> pd.DataFrame:
+    def fetch_minute_data(self, ticker: str, interval_min: int = 1) -> pd.DataFrame:
         try:
             url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice"
             
