@@ -382,6 +382,7 @@ def process_single_ticker(ticker: str, region: str, include_realtime: bool = Tru
             rt_data["ticker"] = ticker
             rt_data["region"] = region
             upsert_realtime_price(rt_data)
+    print(daily_df.shape)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
