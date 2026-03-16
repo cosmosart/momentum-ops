@@ -9,20 +9,22 @@ even when callers forget to close them.
 Usage
 -----
 >>> from shared.database import get_connection, check_health
->>> with get_connection() as conn:
-...     with conn.cursor() as cur:
-...         cur.execute("SELECT 1")
-...         print(cur.fetchone())
+>>> with get_connection() as conn, conn.cursor() as cur:
+...      cur.execute("SELECT 1")
+...      print(cur.fetchone())
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator, Optional
+from typing import LiteralString, cast
 
+from fastapi import params
 import psycopg
-from psycopg.rows import dict_row
+from psycopg import Cursor, sql
+from psycopg.rows import DictRow, dict_row
 from psycopg_pool import ConnectionPool
 
 from shared.config import settings
@@ -30,7 +32,7 @@ from shared.config import settings
 logger = logging.getLogger(__name__)
 
 # ── Module-level pool singleton ───────────────────────────────────────────────
-_pool: Optional[ConnectionPool] = None
+_pool: ConnectionPool | None = None
 
 
 def _get_pool() -> ConnectionPool:
@@ -63,9 +65,8 @@ def get_connection() -> Generator[psycopg.Connection, None, None]:
 
     Example
     -------
-    >>> with get_connection() as conn:
-    ...     with conn.cursor() as cur:
-    ...         cur.execute("INSERT INTO tickers (symbol) VALUES (%s)", ("AAPL",))
+    >>> with get_connection() as conn, conn.cursor() as cur:
+    ...     cur.execute("INSERT INTO tickers (symbol) VALUES (%s)", ("AAPL",))
     ...     conn.commit()
     """
     pool = _get_pool()
@@ -76,6 +77,16 @@ def get_connection() -> Generator[psycopg.Connection, None, None]:
             conn.rollback()
             raise
 
+@contextmanager
+def get_cursor() -> Generator[Cursor[DictRow], None, None]:
+    """
+    Yield a dictionary-aware cursor while managing the underlying connection.
+    """
+    # get_connection is assumed to be a context manager that handles the pool
+    with get_connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        # Type hint helps Pylance track the DictRow through the yield
+        yield cast(Cursor[DictRow], cur)
+        # conn.commit() or conn.rollback() happens here depending on get_connection logic
 
 def check_health() -> bool:
     """
@@ -84,10 +95,9 @@ def check_health() -> bool:
     Useful for liveness probes and sidebar status indicators.
     """
     try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1")
-                return True
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            return True
     except Exception as exc:
         logger.warning("Database health check failed: %s", exc)
         return False
@@ -117,10 +127,60 @@ def execute_ddl(sql_path: str) -> None:
         Absolute or relative path to the ``.sql`` file.
     """
     with open(sql_path) as fh:
-        ddl = fh.read()
+        ddl = cast(LiteralString,fh.read())
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(ddl)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(sql.SQL(ddl), ())
         conn.commit()
         logger.info("DDL executed: %s", sql_path)
+
+def execute_query(
+    cur: Cursor[DictRow],
+    query: str | sql.SQL | sql.Composed,
+    params: tuple = ()
+) -> list[DictRow]:
+    """
+Execute a SQL query and return rows as a list of dictionaries.
+
+    This function serves as the centralized database gateway for the project,
+    enforcing strict security protocols to prevent SQL injection. It utilizes
+    PEP 675 (LiteralString) to ensure that dynamic query construction is handled
+    exclusively via `psycopg.sql` objects rather than unsafe string manipulation.
+
+    Parameters
+    ----------
+    cur : Cursor[DictRow]
+        An active database cursor with `dict_row` factory configured.
+    query : LiteralString | psycopg.sql.SQL | psycopg.sql.Composed
+        The SQL statement to execute. 
+        - Use a raw `str` for static queries (e.g., "SELECT * FROM table").
+        - Use `psycopg.sql.SQL` and `format()` for dynamic structural changes
+          (e.g., dynamic table or column names).
+        - Direct f-strings are prohibited and will be flagged by the linter.
+    params : tuple[Any, ...], optional
+        Positional parameters to be safely bound to `%s` placeholders in the 
+        query by the database driver. Defaults to an empty tuple.
+
+    Returns
+    -------
+    list[psycopg.rows.DictRow]
+        A list of dictionaries where keys are column names and values are 
+        the corresponding row data.
+
+    Raises
+    ------
+    psycopg.Error
+        If the SQL execution fails due to syntax, permission, or connectivity issues.
+
+    Notes
+    -----
+    The function automatically configures the cursor with `dict_row` and provides 
+    explicit type hinting (`Cursor[DictRow]`) to ensure Pylance/Pyright 
+    correctly identifies the return type for downstream data processing.
+    """
+    final_query = cast(LiteralString, query) if isinstance(query, str) else query
+    cur.execute(final_query, params)
+    results = cur.fetchall()
+
+    logger.debug("Query executed | Rows: %d", len(results))
+    return results

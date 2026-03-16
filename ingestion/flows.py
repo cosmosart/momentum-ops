@@ -7,7 +7,7 @@ Contains four top-level workflows:
 3. daily-batch-flow       : End-of-day yfinance historical ingestion & ML inference.
 4. process-single-ticker  : Sub-flow for processing individual assets.
 """
- 
+
 from __future__ import annotations
 
 import json
@@ -27,7 +27,7 @@ from ingestion.fetcher import DataFetcher, KISFetcher
 from models.features import engineer_features
 from models.models import FourModelPredictor, calculate_indicators
 from shared.config import settings, to_yf_symbol
-from shared.database import get_connection
+from shared.database import execute_query, get_connection, get_cursor
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +49,8 @@ def fetch_active_tickers() -> list[dict[str, str]]:
     """Return a list of active ticker dicts ({'symbol', 'region'}) from the database."""
     log = get_run_logger()
     query = "SELECT symbol, market_region FROM tickers WHERE is_active = true ORDER BY symbol"
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(query)
-        tickers = [{"symbol": row["symbol"], "region": row["market_region"]} for row in cur.fetchall()]
+    with get_cursor() as cur:
+        tickers = execute_query(cur, query)
     log.info("Active tickers: %d found", len(tickers))
     return tickers
 
@@ -175,28 +174,29 @@ def fetch_and_store_ticker(ticker: str, fetcher: KISFetcher) -> None:
 def krx_realtime_flow() -> None:
     """High-frequency ingestion during KRX trading hours."""
     log = get_run_logger()
-    
+
     active_tickers = fetch_active_tickers()
     kr_tickers = [t["symbol"] for t in active_tickers if t["region"] == "KR"]
-    
+
     if not kr_tickers:
         log.warning("No active KR tickers found — aborting minute ingestion.")
         return
-    
+
     active_token = load_kis_token()
     if not settings.kis_app_key or not settings.kis_app_secret:
         raise ValueError("KIS API key and secret must be set in settings.")
-        
+
     fetcher = KISFetcher(
+        base_url=settings.kis_api_base_url,
         api_key=settings.kis_app_key,
         api_secret=settings.kis_app_secret,
         token=active_token
     )
-    
+
     log.info("Starting KRX realtime cycle for %d KR tickers.", len(kr_tickers))
     for ticker in kr_tickers:
         fetch_and_store_ticker(ticker, fetcher)
-    
+
     log.info("KRX realtime cycle complete.")
 
 
@@ -331,19 +331,17 @@ def run_inference_and_persist(ticker: str, region: str, daily_df: pd.DataFrame) 
         _contrib_json("conservative_6mo"), _contrib_json("experimental"),
     )
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(query, params)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(query, params)
         conn.commit()
     log.info("%s — analysis row persisted for %s", ticker, latest_date)
 
 @task(name="verify_insertion")
 def verify_insertion(ticker: str, table: str):
     log = get_run_logger()
-    query = f"SELECT MAX(date) FROM {table} WHERE ticker = %s"
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(query, (ticker,))
+    query = f"SELECT MAX(date) FROM {table} WHERE ticker = '{ticker}'"
+    with get_cursor() as cur:
+            cur.execute(query)
             res = cur.fetchone()
             log.info(f"Latest record in {table} for {ticker}: {res}")
 

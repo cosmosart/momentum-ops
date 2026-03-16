@@ -4,8 +4,8 @@ Fetches market data for stocks.
 """
  
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 import pandas as pd
@@ -24,7 +24,7 @@ class DataFetcher:
         """
         self.ticker = ticker
         self.yf_ticker = yf.Ticker(ticker)
-    def fetch_realtime_data(self) -> Optional[Dict[str, Any]]:
+    def fetch_realtime_data(self) -> dict[str, Any] | None:
         """
         Fetch current/realtime data for the ticker.
         Returns:
@@ -43,10 +43,10 @@ class DataFetcher:
             timestamp = data.index[-1].to_pydatetime()
             if timestamp.tzinfo is None:
                 # If yfinance somehow returns a naive timestamp, force it to UTC
-                timestamp = timestamp.replace(tzinfo=timezone.utc)
+                timestamp = timestamp.replace(tzinfo=UTC)
             else:
                 # Convert whatever timezone yfinance gave us (e.g. EST) to UTC
-                timestamp = timestamp.astimezone(timezone.utc)
+                timestamp = timestamp.astimezone(UTC)
             return {
                 'ticker': self.ticker,
                 'timestamp': timestamp,  # <--- Now safely UTC
@@ -59,7 +59,7 @@ class DataFetcher:
         except Exception as e:
             logger.error(f"Failed to fetch realtime data: {e}")
             return None
-    def fetch_daily_data(self, period: str = "1y") -> Optional[pd.DataFrame]:
+    def fetch_daily_data(self, period: str = "1y") -> pd.DataFrame | None:
         """
         Fetch daily historical data.
         Args:
@@ -79,7 +79,7 @@ class DataFetcher:
         except Exception as e:
             logger.error(f"Failed to fetch daily data for {self.ticker}: {e}")
             return None
-    def get_info(self) -> Dict[str, Any]:
+    def get_info(self) -> dict[str, Any]:
         """
         Get ticker information.
         Returns:
@@ -91,8 +91,8 @@ class DataFetcher:
             logger.error(f"Failed to get info for {self.ticker}: {e}")
             return {}
 class KISFetcher:
-    def __init__(self, api_key: str, api_secret: str, token: str):
-        self.base_url = "https://openapi.koreainvestment.com:9443"
+    def __init__(self, base_url: str, api_key: str, api_secret: str, token: str):
+        self.base_url = base_url
         self.headers = {
             "Content-Type": "application/json",
             "authorization": f"Bearer {token}",
