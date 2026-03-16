@@ -2,7 +2,7 @@
 Ticker management tab for the dashboard.
 Add, remove, and manage tracked tickers.
 """
-
+ 
 import streamlit as st
 import sys
 import os

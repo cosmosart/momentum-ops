@@ -1,6 +1,6 @@
 """
 LLM advisory prompt generator.
-
+ 
 Compiles indicators, XGBoost probabilities, per-model SHAP contributions,
 and portfolio mandates into a structured Markdown prompt ready to paste
 into ChatGPT / Gemini / Claude.

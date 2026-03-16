@@ -1,7 +1,7 @@
 """
 Utility functions for the dashboard.
 """
-
+ 
 
 def get_currency_info(ticker: str) -> tuple:
     """

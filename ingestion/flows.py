@@ -7,7 +7,7 @@ Contains four top-level workflows:
 3. daily-batch-flow       : End-of-day yfinance historical ingestion & ML inference.
 4. process-single-ticker  : Sub-flow for processing individual assets.
 """
-
+ 
 from __future__ import annotations
 
 import json
@@ -114,7 +114,7 @@ def load_kis_token() -> str:
     path = pathlib.Path(settings.kis_token_path)
     if not path.exists():
         raise FileNotFoundError(f"KIS token missing at {path}. Run kis-token-renewal-flow.")
-    
+
     token_data = json.loads(path.read_text(encoding="utf-8"))
     access_token = token_data.get("access_token")
     if not access_token:
@@ -126,11 +126,11 @@ def fetch_and_store_ticker(ticker: str, fetcher: KISFetcher) -> None:
     """Fetch 1-min OHLCV data from KIS and upsert into Postgres using psycopg3."""
     log = get_run_logger()
     df = fetcher.fetch_minute_data(ticker)
-    
+
     if df is None or df.empty:
         log.warning("No minute data returned for %s.", ticker)
         return
-        
+
     # Correctly parse timezone so psycopg3 converts it seamlessly to UTC for storage
     df['timestamp'] = pd.to_datetime(df['timestamp'])
     if df['timestamp'].dt.tz is None:
@@ -143,7 +143,7 @@ def fetch_and_store_ticker(ticker: str, fetcher: KISFetcher) -> None:
     for _, r in df.iterrows():
         acml = r.get("accumulated_value", 0)
         acml_val = 0.0 if pd.isna(acml) else float(acml)
-        
+
         rows.append((
             ticker,
             int(r["interval_min"]),
@@ -155,20 +155,20 @@ def fetch_and_store_ticker(ticker: str, fetcher: KISFetcher) -> None:
             int(r["volume"]),
             acml_val
         ))
-    
+
     query = """
         INSERT INTO kr_minute_ohlcv 
             (ticker, interval_min, timestamp, open_price, high_price, low_price, close_price, volume, accumulated_value)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (ticker, interval_min, timestamp) DO NOTHING
     """
-    
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.executemany(query, rows)
             inserted = cur.rowcount
         conn.commit()
-        
+
     log.info("Upserted minute data for %s. Evaluated %d rows, inserted %d.", ticker, len(rows), inserted)
 
 @flow(name="krx-realtime-flow", log_prints=True)
@@ -242,7 +242,7 @@ def upsert_daily_prices(ticker: str, region: str, df: pd.DataFrame) -> int:
             cur.executemany(query, rows)
             row_count = cur.rowcount
         conn.commit()
-    
+
     if row_count == 0:
         log.warning(f"{ticker}: Database reported 0 rows affected during daily upsert.")
     return row_count
@@ -282,7 +282,7 @@ def run_inference_and_persist(ticker: str, region: str, daily_df: pd.DataFrame) 
     log = get_run_logger()
     features = engineer_features(daily_df)
     indicators = calculate_indicators(daily_df)
-    
+
     if indicators.empty:
         log.warning("%s — indicators are empty; skipping analysis upsert", ticker)
         return
@@ -350,9 +350,9 @@ def verify_insertion(ticker: str, table: str):
 @flow(name="process-single-ticker", log_prints=True, retries=1, retry_delay_seconds=30)
 def process_single_ticker(ticker: str, region: str, include_realtime: bool = True) -> None:
     yf_sym = to_yf_symbol(ticker, region)
-    
+
     backfill_if_needed(ticker, region, yf_sym)
-    
+
     daily_df = fetch_yfinance_daily(yf_sym, period="3mo")
     if daily_df is not None and not daily_df.empty:
         upsert_daily_prices(ticker, region, daily_df)

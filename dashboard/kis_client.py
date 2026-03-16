@@ -1,6 +1,6 @@
 """
 KIS (Korea Investment & Securities) REST client for the Streamlit dashboard.
-
+ 
 Provides real-time quote, investor-trading, and daily OHLCV data for
 Korean domestic stocks via the KIS Open API.
 

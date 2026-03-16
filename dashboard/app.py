@@ -1,6 +1,6 @@
 """
 Momentum-Ops Streamlit Dashboard — main entry point.
-
+ 
 This file configures ``st.set_page_config``, renders the **shared sidebar**
 (ticker selector + database status), and acts as the "Home" page.
 

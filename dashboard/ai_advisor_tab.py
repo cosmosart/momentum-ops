@@ -4,11 +4,12 @@ Generates a structured LLM prompt from the latest analysis data that the
 user can copy-paste into ChatGPT / Gemini / Claude for secondary analysis.
 """
 
-import streamlit as st
 import json
-import pandas as pd
-import sys
 import os
+import sys
+
+import pandas as pd
+import streamlit as st
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

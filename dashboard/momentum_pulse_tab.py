@@ -1,6 +1,6 @@
 """
 Momentum Pulse tab — real-time KIS-powered monitoring and analysis.
-
+ 
 Provides all the charting functionality of the Momentum Core tab
 (RSI, MACD, Bollinger Bands, moving averages, support/resistance, VWAP)
 but sourced from the Korea Investment & Securities (KIS) REST API

@@ -4,7 +4,7 @@ Prefect deployment definitions for momentum-ops.
 This file programmatically deploys the KR market high-frequency ingestion flow.
 Legacy APScheduler logic has been fully migrated to ingestion/flows.py.
 """
-
+ 
 from prefect.deployments import Deployment
 from prefect.server.schemas.schedules import CronSchedule
 
@@ -22,7 +22,7 @@ def deploy_kr_ingestion():
         cron="*/5 9-14 * * 1-5", 
         timezone="Asia/Seoul"
     )
-    
+
     # Schedule 2: 15:00 to 15:30 KST (Captures the exact closing cross, halts at 15:30)
     closing_schedule = CronSchedule(
         cron="0,5,10,15,20,25,30 15 * * 1-5", 
@@ -38,7 +38,7 @@ def deploy_kr_ingestion():
         work_queue_name="default",
         description="High-fidelity 5-minute KIS data ingestion for KR swing trades."
     )
-    
+
     deployment.apply()
     print("Successfully applied kr-swing-5min-ingestion deployment.")
 

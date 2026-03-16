@@ -2,7 +2,7 @@
 Predictions tab for the dashboard.
 Displays directional probabilities from four targeted XGBoost models and the
 technical features that contributed to the latest prediction.
-
+ 
 Four models loaded in a single container:
   1. Active 1-Week        — high-risk short-term momentum
   2. Conservative 1-Month — foundational mid-term
