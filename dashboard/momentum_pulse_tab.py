@@ -729,6 +729,6 @@ def _find_sr_levels(
 # Cached client
 # ---------------------------------------------------------------------------
 
-@st.cache_resource(show_spinner=False)
+@st.cache_resource(ttl=3600 * 12, show_spinner=False)
 def _get_client() -> KISDashboardClient:
     return create_client()
